@@ -1,31 +1,25 @@
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router';
+import { useTranslation } from 'react-i18next';
 import type { ReactElement } from 'react';
 import { Career } from '@/__generated__/graphql';
 import { assetUrl, careerIcon } from '@/utils';
 import { scenarioCareerName } from '@/components/scenario/scenarioRoles';
 import { ErrorMessage } from '@/components/global/ErrorMessage';
+import { PeriodPicker, monthKeyForDate } from './PeriodPicker';
+import { type Period, buildMonthPeriod } from './periodUtils';
 
 // This page used to ask production-api.waremu.com's activeCharactersStats
 // for a full month directly, which is an expensive live aggregate scan —
 // busy months reliably blew past the API's own ~60s timeout even split
 // into 25 per-career requests. Instead, a small Cloudflare Worker
 // (killboard-population) polls Skirmishes every 5 minutes and keeps a
-// running de-duplicated ledger in D1. This page just reads the
-// pre-aggregated totals from that Worker, so a month's numbers come back
-// instantly regardless of how much activity happened.
+// running de-duplicated ledger in D1. This page reads pre-aggregated
+// totals from that Worker's /population-range endpoint, which counts
+// DISTINCT characters across any inclusive range of calendar-month
+// buckets - a single month, a quarter, a half-year, a year, or a trailing
+// 12-month window are all just different [from, to] ranges to it.
 const POPULATION_WORKER_URL = 'https://killboard-population.tcates79.workers.dev';
-
-// The Worker started polling on 2026-08-02. Months before that have no
-// live-polled data. January 2026 is the one exception — it was backfilled
-// once, directly in the Worker's database, from a scenario-participation
-// sweep (so it's a same-ballpark estimate, not Skirmish-complete). Every
-// other month before the launch month genuinely has nothing recorded, and
-// that's different from "zero people played" — worth saying so rather than
-// silently showing a 0.
-const POLLER_LAUNCH_MONTH = '2026-08';
-const BACKFILLED_MONTHS = new Set(['2026-01']);
 
 const REALM_ORDER = 0;
 const REALM_DESTRUCTION = 1;
@@ -60,20 +54,96 @@ const CAREER_META: {
   { career: Career.Zealot, realm: REALM_DESTRUCTION },
 ];
 
-const monthPattern = /^\d{4}-\d{2}$/;
-
 interface PopulationRow {
   career: Career;
   realm: 0 | 1;
   count: number;
 }
 
-interface PopulationResponse {
-  month: string;
+interface PopulationRangeResponse {
+  from: string;
+  to: string;
   total: number;
   byCareer: Record<string, { realm: 0 | 1; count: number }>;
+  monthsWithData: string[];
   coverageSince: string | null;
 }
+
+interface RangeState {
+  loading: boolean;
+  error?: Error;
+  rows: PopulationRow[];
+  total: number;
+  monthsWithData: string[];
+  coverageSince: string | null;
+}
+
+// How many "YYYY-MM" buckets an inclusive [from, to] range spans - used to
+// tell "every month in this range has data" apart from "only some do."
+const monthsInRange = (from: string, to: string): number => {
+  const [fromYear, fromMonth] = from.split('-').map(Number);
+  const [toYear, toMonth] = to.split('-').map(Number);
+  return (toYear - fromYear) * 12 + (toMonth - fromMonth) + 1;
+};
+
+const usePopulationRange = (period: Period): RangeState => {
+  const [state, setState] = useState<RangeState>({
+    loading: true,
+    rows: [],
+    total: 0,
+    monthsWithData: [],
+    coverageSince: null,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState((prev) => ({ ...prev, loading: true, error: undefined }));
+
+    const load = async (): Promise<void> => {
+      try {
+        const response = await fetch(
+          `${POPULATION_WORKER_URL}/population-range?from=${period.from}&to=${period.to}`,
+        );
+        if (!response.ok) {
+          throw new Error(`Population Worker responded with ${response.status}`);
+        }
+        const data = (await response.json()) as PopulationRangeResponse;
+        if (cancelled) {
+          return;
+        }
+        setState({
+          loading: false,
+          rows: CAREER_META.map((meta) => ({
+            career: meta.career,
+            realm: meta.realm,
+            count: data.byCareer[meta.career]?.count ?? 0,
+          })),
+          total: data.total,
+          monthsWithData: data.monthsWithData,
+          coverageSince: data.coverageSince,
+        });
+      } catch (caughtError) {
+        if (!cancelled) {
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error:
+              caughtError instanceof Error
+                ? caughtError
+                : new Error('Unable to load character activity.'),
+          }));
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [period.from, period.to]);
+
+  return state;
+};
 
 const RealmPanel = ({
   careers,
@@ -94,7 +164,7 @@ const RealmPanel = ({
         src={assetUrl(`/images/icons/scenario/${realmName.toLowerCase()}.png`)}
         width={28}
       />
-      <h2>{realmName} population</h2>
+      <h2>{realmName} activity</h2>
       <span>{total.toLocaleString()} active</span>
     </header>
     <ul className="population-bars">
@@ -123,95 +193,24 @@ const RealmPanel = ({
   </div>
 );
 
-export const CharacterPopulation = (): ReactElement => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const currentMonth = format(new Date(), 'yyyy-MM');
-  const monthParam = searchParams.get('month') ?? '';
-  const month = monthPattern.test(monthParam) ? monthParam : currentMonth;
-
-  const [rows, setRows] = useState<PopulationRow[]>([]);
-  const [total, setTotal] = useState(0);
-  const [coverageSince, setCoverageSince] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<Error>();
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(undefined);
-
-    const loadPopulation = async (): Promise<void> => {
-      try {
-        const response = await fetch(
-          `${POPULATION_WORKER_URL}/population?month=${month}`,
-        );
-        if (!response.ok) {
-          throw new Error(
-            `Population Worker responded with ${response.status}`,
-          );
-        }
-        const data = (await response.json()) as PopulationResponse;
-        if (cancelled) {
-          return;
-        }
-        setTotal(data.total);
-        setCoverageSince(data.coverageSince);
-        setRows(
-          CAREER_META.map((meta) => ({
-            career: meta.career,
-            realm: meta.realm,
-            count: data.byCareer[meta.career]?.count ?? 0,
-          })),
-        );
-      } catch (caughtError) {
-        if (!cancelled) {
-          setError(
-            caughtError instanceof Error
-              ? caughtError
-              : new Error('Unable to load character population.'),
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
-
-    void loadPopulation();
-    return () => {
-      cancelled = true;
-    };
-  }, [month]);
-
-  const onMonthChange = (value: string): void => {
-    const next = new URLSearchParams(searchParams);
-    if (monthPattern.test(value) && value !== currentMonth) {
-      next.set('month', value);
-    } else {
-      next.delete('month');
-    }
-    setSearchParams(next, { replace: true });
-  };
-
-  const [labelYear, labelMonthIndex] = month.split('-').map(Number);
-  const monthLabel = format(
-    new Date(labelYear, labelMonthIndex - 1, 1),
-    'MMMM yyyy',
-  );
+const ClassActivityOverview = ({
+  currentMonth,
+}: {
+  currentMonth: string;
+}): ReactElement => {
+  const [period, setPeriod] = useState<Period>(() => buildMonthPeriod(currentMonth));
+  const { loading, error, rows, total, monthsWithData, coverageSince } =
+    usePopulationRange(period);
 
   if (error) {
     return <ErrorMessage message={error.message} name={error.name} />;
   }
 
-  // Months before the poller existed (and that weren't separately
-  // backfilled) genuinely have no data — that's different from "nobody
-  // played," so say so instead of quietly showing a 0.
-  const isUntrackedMonth =
-    !loading &&
-    total === 0 &&
-    month < POLLER_LAUNCH_MONTH &&
-    !BACKFILLED_MONTHS.has(month);
+  const requestedMonths = monthsInRange(period.from, period.to);
+  const isUntracked = !loading && monthsWithData.length === 0;
+  const isPartiallyTracked =
+    !loading && monthsWithData.length > 0 && monthsWithData.length < requestedMonths;
+  const isOngoing = period.to >= currentMonth && coverageSince != null;
 
   const orderRows = rows
     .filter((row) => row.realm === REALM_ORDER)
@@ -220,33 +219,24 @@ export const CharacterPopulation = (): ReactElement => {
     .filter((row) => row.realm === REALM_DESTRUCTION)
     .toSorted((a, b) => b.count - a.count);
   const orderTotal = orderRows.reduce((sum, row) => sum + row.count, 0);
-  const destructionTotal = destructionRows.reduce(
-    (sum, row) => sum + row.count,
-    0,
-  );
+  const destructionTotal = destructionRows.reduce((sum, row) => sum + row.count, 0);
   const combinedTotal = orderTotal + destructionTotal;
-  const orderSharePercent =
-    combinedTotal === 0 ? 50 : (orderTotal / combinedTotal) * 100;
+  const orderSharePercent = combinedTotal === 0 ? 50 : (orderTotal / combinedTotal) * 100;
   const maxCount = Math.max(1, ...rows.map((row) => row.count));
   const tableRows = rows.toSorted((a, b) => b.count - a.count);
 
   return (
     <>
       <div className="population-toolbar">
-        <label>
-          <span>Month</span>
-          <input
-            max={currentMonth}
-            type="month"
-            value={month}
-            onChange={(event) => {
-              onMonthChange(event.target.value);
-            }}
-          />
-        </label>
+        <PeriodPicker
+          currentMonth={currentMonth}
+          idPrefix="overview"
+          value={period}
+          onChange={setPeriod}
+        />
         <div className="population-total">
           <strong>{loading ? '…' : total.toLocaleString()}</strong>
-          <span>active characters in {monthLabel}</span>
+          <span>active characters in {period.label}</span>
         </div>
       </div>
       {(() => {
@@ -254,108 +244,322 @@ export const CharacterPopulation = (): ReactElement => {
           return (
             <div className="scenario-window-loading">
               <progress className="progress is-small is-primary" />
-              <strong>Loading population for {monthLabel}…</strong>
+              <strong>Loading activity for {period.label}…</strong>
             </div>
           );
         }
-        if (isUntrackedMonth) {
+        if (isUntracked) {
           return (
             <div className="notification is-warning">
               <p>
-                <strong>{monthLabel}</strong> is before this page started
-                tracking population (August 2026), so there&apos;s no data
-                recorded for it — that&apos;s not the same as zero players.
+                <strong>{period.label}</strong> doesn&apos;t have any recorded
+                data yet — either it&apos;s further back than this page&apos;s
+                historical backfill has reached so far, or it&apos;s in the
+                future. That&apos;s not the same as zero players.
               </p>
             </div>
           );
         }
         return (
+          <>
+            {isOngoing && coverageSince != null && (
+              <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+                Counting through {format(new Date(coverageSince), 'PPp')} so far
+                for this period.
+              </p>
+            )}
+            {isPartiallyTracked && (
+              <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+                Only {monthsWithData.length} of {requestedMonths} months in this
+                period have recorded data so far — the total likely undercounts
+                the full period.
+              </p>
+            )}
+            <div className="scenario-win-balance mb-4">
+              <div className="scenario-win-balance-totals">
+                <span>
+                  <strong>{orderTotal.toLocaleString()}</strong> Order
+                </span>
+                <span>
+                  <strong>{destructionTotal.toLocaleString()}</strong> Destruction
+                </span>
+              </div>
+              <div className="scenario-win-balance-bar">
+                <span style={{ width: `${orderSharePercent}%` }} />
+              </div>
+            </div>
+            <div className="population-grid mb-4">
+              <RealmPanel
+                careers={orderRows}
+                maxCount={maxCount}
+                realmName="Order"
+                total={orderTotal}
+              />
+              <RealmPanel
+                careers={destructionRows}
+                maxCount={maxCount}
+                realmName="Destruction"
+                total={destructionTotal}
+              />
+            </div>
+            <table className="table is-fullwidth population-table">
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Realm</th>
+                  <th>Active characters</th>
+                  <th>% of realm</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.map((row) => {
+                  const realmTotal =
+                    row.realm === REALM_ORDER ? orderTotal : destructionTotal;
+                  const share = realmTotal === 0 ? 0 : (row.count / realmTotal) * 100;
+                  return (
+                    <tr key={row.career}>
+                      <td>
+                        <img
+                          alt={row.career}
+                          height={20}
+                          src={careerIcon(row.career)}
+                          width={20}
+                        />{' '}
+                        {scenarioCareerName(row.career)}
+                      </td>
+                      <td
+                        className={
+                          row.realm === REALM_ORDER
+                            ? 'scenario-breakdown-order'
+                            : 'scenario-breakdown-destruction'
+                        }
+                      >
+                        {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
+                      </td>
+                      <td>{row.count.toLocaleString()}</td>
+                      <td>{share.toFixed(1)}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
+        );
+      })()}
+    </>
+  );
+};
+
+// Period B defaults to "the same month, one year earlier" than Period A's
+// initial value (e.g. Period A = July 2026 defaults Period B to July
+// 2025) - the exact comparison the user asked for out of the box. Both
+// pickers stay fully independent after that; picking a new granularity or
+// period on either side doesn't re-derive the other one automatically.
+const deltaClassName = (change: number): string | undefined => {
+  if (change > 0) {
+    return 'compare-delta-positive';
+  }
+  if (change < 0) {
+    return 'compare-delta-negative';
+  }
+  return undefined;
+};
+
+const oneYearBeforeMonth = (month: string): Period => {
+  const [year, monthNum] = month.split('-').map(Number);
+  return buildMonthPeriod(`${year - 1}-${String(monthNum).padStart(2, '0')}`);
+};
+
+const ClassActivityCompare = ({
+  currentMonth,
+}: {
+  currentMonth: string;
+}): ReactElement => {
+  const [periodA, setPeriodA] = useState<Period>(() => buildMonthPeriod(currentMonth));
+  const [periodB, setPeriodB] = useState<Period>(() => oneYearBeforeMonth(currentMonth));
+
+  const a = usePopulationRange(periodA);
+  const b = usePopulationRange(periodB);
+
+  if (a.error || b.error) {
+    const err = (a.error ?? b.error) as Error;
+    return <ErrorMessage message={err.message} name={err.name} />;
+  }
+
+  const rowsA = CAREER_META.map((meta) => ({
+    career: meta.career,
+    realm: meta.realm,
+    count: a.rows.find((row) => row.career === meta.career)?.count ?? 0,
+  }));
+  const rowsB = CAREER_META.map((meta) => ({
+    career: meta.career,
+    realm: meta.realm,
+    count: b.rows.find((row) => row.career === meta.career)?.count ?? 0,
+  }));
+
+  const loading = a.loading || b.loading;
+
+  const orderA = rowsA.filter((r) => r.realm === REALM_ORDER).toSorted((x, y) => y.count - x.count);
+  const destA = rowsA.filter((r) => r.realm === REALM_DESTRUCTION).toSorted((x, y) => y.count - x.count);
+  const orderB = rowsB.filter((r) => r.realm === REALM_ORDER).toSorted((x, y) => y.count - x.count);
+  const destB = rowsB.filter((r) => r.realm === REALM_DESTRUCTION).toSorted((x, y) => y.count - x.count);
+  const maxCount = Math.max(1, ...rowsA.map((r) => r.count), ...rowsB.map((r) => r.count));
+
+  const deltaRows = CAREER_META.map((meta) => {
+    const countA = rowsA.find((r) => r.career === meta.career)?.count ?? 0;
+    const countB = rowsB.find((r) => r.career === meta.career)?.count ?? 0;
+    const change = countA - countB;
+    const changePercent = countB === 0 ? null : (change / countB) * 100;
+    return {
+      career: meta.career,
+      realm: meta.realm,
+      countA,
+      countB,
+      change,
+      changePercent,
+    };
+  }).toSorted((x, y) => Math.abs(y.change) - Math.abs(x.change));
+
+  return (
+    <>
+      <div className="population-toolbar">
+        <PeriodPicker currentMonth={currentMonth} idPrefix="period-a" value={periodA} onChange={setPeriodA} />
+      </div>
+      <div className="population-toolbar mb-4">
+        <PeriodPicker currentMonth={currentMonth} idPrefix="period-b" value={periodB} onChange={setPeriodB} />
+      </div>
+      {loading ? (
+        <div className="scenario-window-loading">
+          <progress className="progress is-small is-primary" />
+          <strong>
+            Loading {periodA.label} vs {periodB.label}…
+          </strong>
+        </div>
+      ) : (
         <>
-          {month === currentMonth && coverageSince != null && (
-            <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
-              Counting through {format(new Date(coverageSince), 'PPp')} so
-              far this month.
-            </p>
-          )}
-          {BACKFILLED_MONTHS.has(month) && (
-            <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
-              This month was backfilled from scenario participation only, so
-              it likely undercounts players who never queued for a
-              scenario.
-            </p>
-          )}
-          <div className="scenario-win-balance mb-4">
-            <div className="scenario-win-balance-totals">
-              <span>
-                <strong>{orderTotal.toLocaleString()}</strong> Order
-              </span>
-              <span>
-                <strong>{destructionTotal.toLocaleString()}</strong> Destruction
-              </span>
+          <div className="compare-columns">
+            <div>
+              <div className="compare-period-heading">
+                {periodA.label} — {a.total.toLocaleString()} active
+                {a.monthsWithData.length === 0 && ' (no data recorded)'}
+              </div>
+              <div className="population-grid">
+                <RealmPanel
+                  careers={orderA}
+                  maxCount={maxCount}
+                  realmName="Order"
+                  total={orderA.reduce((sum, r) => sum + r.count, 0)}
+                />
+                <RealmPanel
+                  careers={destA}
+                  maxCount={maxCount}
+                  realmName="Destruction"
+                  total={destA.reduce((sum, r) => sum + r.count, 0)}
+                />
+              </div>
             </div>
-            <div className="scenario-win-balance-bar">
-              <span style={{ width: `${orderSharePercent}%` }} />
+            <div>
+              <div className="compare-period-heading">
+                {periodB.label} — {b.total.toLocaleString()} active
+                {b.monthsWithData.length === 0 && ' (no data recorded)'}
+              </div>
+              <div className="population-grid">
+                <RealmPanel
+                  careers={orderB}
+                  maxCount={maxCount}
+                  realmName="Order"
+                  total={orderB.reduce((sum, r) => sum + r.count, 0)}
+                />
+                <RealmPanel
+                  careers={destB}
+                  maxCount={maxCount}
+                  realmName="Destruction"
+                  total={destB.reduce((sum, r) => sum + r.count, 0)}
+                />
+              </div>
             </div>
-          </div>
-          <div className="population-grid mb-4">
-            <RealmPanel
-              careers={orderRows}
-              maxCount={maxCount}
-              realmName="Order"
-              total={orderTotal}
-            />
-            <RealmPanel
-              careers={destructionRows}
-              maxCount={maxCount}
-              realmName="Destruction"
-              total={destructionTotal}
-            />
           </div>
           <table className="table is-fullwidth population-table">
             <thead>
               <tr>
                 <th>Class</th>
                 <th>Realm</th>
-                <th>Active characters</th>
-                <th>% of realm</th>
+                <th>{periodA.label}</th>
+                <th>{periodB.label}</th>
+                <th>Change</th>
               </tr>
             </thead>
             <tbody>
-              {tableRows.map((row) => {
-                const realmTotal =
-                  row.realm === REALM_ORDER ? orderTotal : destructionTotal;
-                const share =
-                  realmTotal === 0 ? 0 : (row.count / realmTotal) * 100;
-                return (
-                  <tr key={row.career}>
-                    <td>
-                      <img
-                        alt={row.career}
-                        height={20}
-                        src={careerIcon(row.career)}
-                        width={20}
-                      />{' '}
-                      {scenarioCareerName(row.career)}
-                    </td>
-                    <td
-                      className={
-                        row.realm === REALM_ORDER
-                          ? 'scenario-breakdown-order'
-                          : 'scenario-breakdown-destruction'
-                      }
-                    >
-                      {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
-                    </td>
-                    <td>{row.count.toLocaleString()}</td>
-                    <td>{share.toFixed(1)}%</td>
-                  </tr>
-                );
-              })}
+              {deltaRows.map((row) => (
+                <tr key={row.career}>
+                  <td>
+                    <img alt={row.career} height={20} src={careerIcon(row.career)} width={20} />{' '}
+                    {scenarioCareerName(row.career)}
+                  </td>
+                  <td
+                    className={
+                      row.realm === REALM_ORDER
+                        ? 'scenario-breakdown-order'
+                        : 'scenario-breakdown-destruction'
+                    }
+                  >
+                    {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
+                  </td>
+                  <td>{row.countA.toLocaleString()}</td>
+                  <td>{row.countB.toLocaleString()}</td>
+                  <td className={deltaClassName(row.change)}>
+                    {row.change > 0 ? '+' : ''}
+                    {row.change.toLocaleString()}
+                    {row.changePercent != null && (
+                      <>
+                        {' '}
+                        ({row.change > 0 ? '+' : ''}
+                        {row.changePercent.toFixed(0)}%)
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </>
-        );
-      })()}
+      )}
+    </>
+  );
+};
+
+export const CharacterPopulation = (): ReactElement => {
+  const { t } = useTranslation(['pages']);
+  const [subTab, setSubTab] = useState<'overview' | 'compare'>('overview');
+  const currentMonth = monthKeyForDate(new Date());
+
+  return (
+    <>
+      <div className="class-activity-subtabs">
+        <button
+          className={subTab === 'overview' ? 'is-active' : ''}
+          type="button"
+          onClick={() => {
+            setSubTab('overview');
+          }}
+        >
+          {t('pages:classActivity.overview')}
+        </button>
+        <button
+          className={subTab === 'compare' ? 'is-active' : ''}
+          type="button"
+          onClick={() => {
+            setSubTab('compare');
+          }}
+        >
+          {t('pages:classActivity.compare')}
+        </button>
+      </div>
+      {subTab === 'overview' ? (
+        <ClassActivityOverview currentMonth={currentMonth} />
+      ) : (
+        <ClassActivityCompare currentMonth={currentMonth} />
+      )}
     </>
   );
 };
