@@ -1,6 +1,7 @@
 import { gql } from '@apollo/client';
-import { useQuery } from '@apollo/client/react';
+import { useApolloClient } from '@apollo/client/react';
 import { format } from 'date-fns';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import type { ReactElement } from 'react';
 import { Career } from '@/__generated__/graphql';
@@ -8,158 +9,63 @@ import { assetUrl, careerIcon } from '@/utils';
 import { scenarioCareerName } from '@/components/scenario/scenarioRoles';
 import { ErrorMessage } from '@/components/global/ErrorMessage';
 
-// One activeCharactersStats(from, to, career) call per career plus an
-// overall total, folded into a single request via aliases so a full
-// per-class population breakdown is one round trip instead of 25.
-const ACTIVE_CHARACTER_POPULATION = gql`
-  query GetActiveCharacterPopulation($from: DateTime!, $to: DateTime!) {
-    total: activeCharactersStats(from: $from, to: $to)
-    archmage: activeCharactersStats(from: $from, to: $to, career: ARCHMAGE)
-    blackGuard: activeCharactersStats(from: $from, to: $to, career: BLACK_GUARD)
-    blackOrc: activeCharactersStats(from: $from, to: $to, career: BLACK_ORC)
-    brightWizard: activeCharactersStats(
-      from: $from
-      to: $to
-      career: BRIGHT_WIZARD
-    )
-    choppa: activeCharactersStats(from: $from, to: $to, career: CHOPPA)
-    chosen: activeCharactersStats(from: $from, to: $to, career: CHOSEN)
-    discipleOfKhaine: activeCharactersStats(
-      from: $from
-      to: $to
-      career: DISCIPLE_OF_KHAINE
-    )
-    engineer: activeCharactersStats(from: $from, to: $to, career: ENGINEER)
-    ironBreaker: activeCharactersStats(
-      from: $from
-      to: $to
-      career: IRON_BREAKER
-    )
-    knightOfTheBlazingSun: activeCharactersStats(
-      from: $from
-      to: $to
-      career: KNIGHT_OF_THE_BLAZING_SUN
-    )
-    magus: activeCharactersStats(from: $from, to: $to, career: MAGUS)
-    marauder: activeCharactersStats(from: $from, to: $to, career: MARAUDER)
-    runePriest: activeCharactersStats(from: $from, to: $to, career: RUNE_PRIEST)
-    shadowWarrior: activeCharactersStats(
-      from: $from
-      to: $to
-      career: SHADOW_WARRIOR
-    )
-    shaman: activeCharactersStats(from: $from, to: $to, career: SHAMAN)
-    slayer: activeCharactersStats(from: $from, to: $to, career: SLAYER)
-    sorcerer: activeCharactersStats(from: $from, to: $to, career: SORCERER)
-    squigHerder: activeCharactersStats(
-      from: $from
-      to: $to
-      career: SQUIG_HERDER
-    )
-    swordMaster: activeCharactersStats(
-      from: $from
-      to: $to
-      career: SWORD_MASTER
-    )
-    warriorPriest: activeCharactersStats(
-      from: $from
-      to: $to
-      career: WARRIOR_PRIEST
-    )
-    whiteLion: activeCharactersStats(from: $from, to: $to, career: WHITE_LION)
-    witchElf: activeCharactersStats(from: $from, to: $to, career: WITCH_ELF)
-    witchHunter: activeCharactersStats(
-      from: $from
-      to: $to
-      career: WITCH_HUNTER
-    )
-    zealot: activeCharactersStats(from: $from, to: $to, career: ZEALOT)
+// A full-month activeCharactersStats(from, to, career) call is an expensive
+// aggregate scan on its own. Aliasing all 24 careers plus the overall total
+// into a single query made the server resolve them one after another inside
+// one request, which blew past its 1-minute timeout for any month with more
+// than a few hours of data. Firing 25 separate requests instead lets the
+// browser run them concurrently, so each one only has to clear its own
+// timeout window rather than sharing one across all 25.
+const ACTIVE_CHARACTER_STAT = gql`
+  query GetActiveCharacterStat(
+    $from: DateTime!
+    $to: DateTime!
+    $career: Career
+  ) {
+    activeCharactersStats(from: $from, to: $to, career: $career)
   }
 `;
-
-type CareerCountKey =
-  | 'archmage'
-  | 'blackGuard'
-  | 'blackOrc'
-  | 'brightWizard'
-  | 'choppa'
-  | 'chosen'
-  | 'discipleOfKhaine'
-  | 'engineer'
-  | 'ironBreaker'
-  | 'knightOfTheBlazingSun'
-  | 'magus'
-  | 'marauder'
-  | 'runePriest'
-  | 'shadowWarrior'
-  | 'shaman'
-  | 'slayer'
-  | 'sorcerer'
-  | 'squigHerder'
-  | 'swordMaster'
-  | 'warriorPriest'
-  | 'whiteLion'
-  | 'witchElf'
-  | 'witchHunter'
-  | 'zealot';
-
-// This environment can't reach production-api.waremu.com to run
-// `npm run codegen`, so this type is hand-written to match the query above
-// instead of generated. It should match exactly what codegen would produce
-// for this operation (activeCharactersStats returns a nullable Int) — run
-// `npm run codegen` locally to replace it with the real generated type next
-// time this query changes.
-type ActiveCharacterPopulationData = {
-  total: number | null | undefined;
-} & Record<CareerCountKey, number | null | undefined>;
 
 const REALM_ORDER = 0;
 const REALM_DESTRUCTION = 1;
 
 const CAREER_META: {
-  alias: CareerCountKey;
   career: Career;
   realm: typeof REALM_ORDER | typeof REALM_DESTRUCTION;
 }[] = [
-  { alias: 'archmage', career: Career.Archmage, realm: REALM_ORDER },
-  { alias: 'brightWizard', career: Career.BrightWizard, realm: REALM_ORDER },
-  { alias: 'engineer', career: Career.Engineer, realm: REALM_ORDER },
-  { alias: 'ironBreaker', career: Career.IronBreaker, realm: REALM_ORDER },
-  {
-    alias: 'knightOfTheBlazingSun',
-    career: Career.KnightOfTheBlazingSun,
-    realm: REALM_ORDER,
-  },
-  { alias: 'runePriest', career: Career.RunePriest, realm: REALM_ORDER },
-  { alias: 'shadowWarrior', career: Career.ShadowWarrior, realm: REALM_ORDER },
-  { alias: 'slayer', career: Career.Slayer, realm: REALM_ORDER },
-  { alias: 'swordMaster', career: Career.SwordMaster, realm: REALM_ORDER },
-  { alias: 'warriorPriest', career: Career.WarriorPriest, realm: REALM_ORDER },
-  { alias: 'whiteLion', career: Career.WhiteLion, realm: REALM_ORDER },
-  { alias: 'witchHunter', career: Career.WitchHunter, realm: REALM_ORDER },
-  { alias: 'blackGuard', career: Career.BlackGuard, realm: REALM_DESTRUCTION },
-  { alias: 'blackOrc', career: Career.BlackOrc, realm: REALM_DESTRUCTION },
-  { alias: 'choppa', career: Career.Choppa, realm: REALM_DESTRUCTION },
-  { alias: 'chosen', career: Career.Chosen, realm: REALM_DESTRUCTION },
-  {
-    alias: 'discipleOfKhaine',
-    career: Career.DiscipleOfKhaine,
-    realm: REALM_DESTRUCTION,
-  },
-  { alias: 'magus', career: Career.Magus, realm: REALM_DESTRUCTION },
-  { alias: 'marauder', career: Career.Marauder, realm: REALM_DESTRUCTION },
-  { alias: 'shaman', career: Career.Shaman, realm: REALM_DESTRUCTION },
-  { alias: 'sorcerer', career: Career.Sorcerer, realm: REALM_DESTRUCTION },
-  {
-    alias: 'squigHerder',
-    career: Career.SquigHerder,
-    realm: REALM_DESTRUCTION,
-  },
-  { alias: 'witchElf', career: Career.WitchElf, realm: REALM_DESTRUCTION },
-  { alias: 'zealot', career: Career.Zealot, realm: REALM_DESTRUCTION },
+  { career: Career.Archmage, realm: REALM_ORDER },
+  { career: Career.BrightWizard, realm: REALM_ORDER },
+  { career: Career.Engineer, realm: REALM_ORDER },
+  { career: Career.IronBreaker, realm: REALM_ORDER },
+  { career: Career.KnightOfTheBlazingSun, realm: REALM_ORDER },
+  { career: Career.RunePriest, realm: REALM_ORDER },
+  { career: Career.ShadowWarrior, realm: REALM_ORDER },
+  { career: Career.Slayer, realm: REALM_ORDER },
+  { career: Career.SwordMaster, realm: REALM_ORDER },
+  { career: Career.WarriorPriest, realm: REALM_ORDER },
+  { career: Career.WhiteLion, realm: REALM_ORDER },
+  { career: Career.WitchHunter, realm: REALM_ORDER },
+  { career: Career.BlackGuard, realm: REALM_DESTRUCTION },
+  { career: Career.BlackOrc, realm: REALM_DESTRUCTION },
+  { career: Career.Choppa, realm: REALM_DESTRUCTION },
+  { career: Career.Chosen, realm: REALM_DESTRUCTION },
+  { career: Career.DiscipleOfKhaine, realm: REALM_DESTRUCTION },
+  { career: Career.Magus, realm: REALM_DESTRUCTION },
+  { career: Career.Marauder, realm: REALM_DESTRUCTION },
+  { career: Career.Shaman, realm: REALM_DESTRUCTION },
+  { career: Career.Sorcerer, realm: REALM_DESTRUCTION },
+  { career: Career.SquigHerder, realm: REALM_DESTRUCTION },
+  { career: Career.WitchElf, realm: REALM_DESTRUCTION },
+  { career: Career.Zealot, realm: REALM_DESTRUCTION },
 ];
 
 const monthPattern = /^\d{4}-\d{2}$/;
+
+interface PopulationRow {
+  career: Career;
+  realm: 0 | 1;
+  count: number;
+}
 
 const RealmPanel = ({
   careers,
@@ -167,7 +73,7 @@ const RealmPanel = ({
   realmName,
   total,
 }: {
-  careers: { alias: CareerCountKey; career: Career; count: number }[];
+  careers: PopulationRow[];
   maxCount: number;
   realmName: 'Order' | 'Destruction';
   total: number;
@@ -184,8 +90,8 @@ const RealmPanel = ({
       <span>{total.toLocaleString()} active</span>
     </header>
     <ul className="population-bars">
-      {careers.map(({ alias, career, count }) => (
-        <li key={alias}>
+      {careers.map(({ career, count }) => (
+        <li key={career}>
           <img alt={career} height={20} src={careerIcon(career)} width={20} />
           <span className="population-bar-name">
             {scenarioCareerName(career)}
@@ -210,26 +116,77 @@ const RealmPanel = ({
 );
 
 export const CharacterPopulation = (): ReactElement => {
+  const client = useApolloClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentMonth = format(new Date(), 'yyyy-MM');
   const monthParam = searchParams.get('month') ?? '';
   const month = monthPattern.test(monthParam) ? monthParam : currentMonth;
-  const [year, monthIndex] = month.split('-').map(Number);
-  // Upper bound is the first moment of the *next* month, so the query
-  // covers the entire selected month regardless of whether the API treats
-  // `to` as inclusive or exclusive.
-  const from = new Date(year, monthIndex - 1, 1);
-  const to = new Date(year, monthIndex, 1);
 
-  const { data, error, loading } = useQuery<ActiveCharacterPopulationData>(
-    ACTIVE_CHARACTER_POPULATION,
-    {
-      variables: {
-        from: from.toISOString(),
-        to: to.toISOString(),
-      },
-    },
-  );
+  const [rows, setRows] = useState<PopulationRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error>();
+
+  useEffect(() => {
+    const [year, monthIndex] = month.split('-').map(Number);
+    const from = new Date(year, monthIndex - 1, 1);
+    // Upper bound is the first moment of the *next* month, so the query
+    // covers the entire selected month regardless of whether the API
+    // treats `to` as inclusive or exclusive.
+    const to = new Date(year, monthIndex, 1);
+    const variables = { from: from.toISOString(), to: to.toISOString() };
+
+    let cancelled = false;
+    setLoading(true);
+    setError(undefined);
+
+    const loadAll = async (): Promise<void> => {
+      try {
+        const [totalResult, ...careerResults] = await Promise.all([
+          client.query<{ activeCharactersStats: number | null }>({
+            fetchPolicy: 'cache-first',
+            query: ACTIVE_CHARACTER_STAT,
+            variables,
+          }),
+          ...CAREER_META.map((meta) =>
+            client.query<{ activeCharactersStats: number | null }>({
+              fetchPolicy: 'cache-first',
+              query: ACTIVE_CHARACTER_STAT,
+              variables: { ...variables, career: meta.career },
+            }),
+          ),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setTotal(totalResult.data?.activeCharactersStats ?? 0);
+        setRows(
+          CAREER_META.map((meta, index) => ({
+            career: meta.career,
+            realm: meta.realm,
+            count: careerResults[index]?.data?.activeCharactersStats ?? 0,
+          })),
+        );
+      } catch (caughtError) {
+        if (!cancelled) {
+          setError(
+            caughtError instanceof Error
+              ? caughtError
+              : new Error('Unable to load character population.'),
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void loadAll();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, month]);
 
   const onMonthChange = (value: string): void => {
     const next = new URLSearchParams(searchParams);
@@ -245,10 +202,6 @@ export const CharacterPopulation = (): ReactElement => {
     return <ErrorMessage message={error.message} name={error.name} />;
   }
 
-  const rows = CAREER_META.map((meta) => ({
-    ...meta,
-    count: data?.[meta.alias] ?? 0,
-  }));
   const orderRows = rows
     .filter((row) => row.realm === REALM_ORDER)
     .toSorted((a, b) => b.count - a.count);
@@ -260,12 +213,13 @@ export const CharacterPopulation = (): ReactElement => {
     (sum, row) => sum + row.count,
     0,
   );
-  const total = data?.total ?? orderTotal + destructionTotal;
   const combinedTotal = orderTotal + destructionTotal;
   const orderSharePercent =
     combinedTotal === 0 ? 50 : (orderTotal / combinedTotal) * 100;
   const maxCount = Math.max(1, ...rows.map((row) => row.count));
   const tableRows = rows.toSorted((a, b) => b.count - a.count);
+  const [year, monthIndex] = month.split('-').map(Number);
+  const monthLabel = format(new Date(year, monthIndex - 1, 1), 'MMMM yyyy');
 
   return (
     <>
@@ -283,77 +237,91 @@ export const CharacterPopulation = (): ReactElement => {
         </label>
         <div className="population-total">
           <strong>{loading ? '…' : total.toLocaleString()}</strong>
-          <span>active characters in {format(from, 'MMMM yyyy')}</span>
+          <span>active characters in {monthLabel}</span>
         </div>
       </div>
-      <div className="scenario-win-balance mb-4">
-        <div className="scenario-win-balance-totals">
+      {loading ? (
+        <div className="scenario-window-loading">
+          <progress className="progress is-small is-primary" />
+          <strong>Gathering population for {monthLabel}…</strong>
           <span>
-            <strong>{orderTotal.toLocaleString()}</strong> Order
-          </span>
-          <span>
-            <strong>{destructionTotal.toLocaleString()}</strong> Destruction
+            Fetching each class separately so a busy full month doesn&apos;t
+            time out the whole page.
           </span>
         </div>
-        <div className="scenario-win-balance-bar">
-          <span style={{ width: `${orderSharePercent}%` }} />
-        </div>
-      </div>
-      <div className="population-grid mb-4">
-        <RealmPanel
-          careers={orderRows}
-          maxCount={maxCount}
-          realmName="Order"
-          total={orderTotal}
-        />
-        <RealmPanel
-          careers={destructionRows}
-          maxCount={maxCount}
-          realmName="Destruction"
-          total={destructionTotal}
-        />
-      </div>
-      <table className="table is-fullwidth population-table">
-        <thead>
-          <tr>
-            <th>Class</th>
-            <th>Realm</th>
-            <th>Active characters</th>
-            <th>% of realm</th>
-          </tr>
-        </thead>
-        <tbody>
-          {tableRows.map((row) => {
-            const realmTotal =
-              row.realm === REALM_ORDER ? orderTotal : destructionTotal;
-            const share = realmTotal === 0 ? 0 : (row.count / realmTotal) * 100;
-            return (
-              <tr key={row.alias}>
-                <td>
-                  <img
-                    alt={row.career}
-                    height={20}
-                    src={careerIcon(row.career)}
-                    width={20}
-                  />{' '}
-                  {scenarioCareerName(row.career)}
-                </td>
-                <td
-                  className={
-                    row.realm === REALM_ORDER
-                      ? 'scenario-breakdown-order'
-                      : 'scenario-breakdown-destruction'
-                  }
-                >
-                  {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
-                </td>
-                <td>{row.count.toLocaleString()}</td>
-                <td>{share.toFixed(1)}%</td>
+      ) : (
+        <>
+          <div className="scenario-win-balance mb-4">
+            <div className="scenario-win-balance-totals">
+              <span>
+                <strong>{orderTotal.toLocaleString()}</strong> Order
+              </span>
+              <span>
+                <strong>{destructionTotal.toLocaleString()}</strong> Destruction
+              </span>
+            </div>
+            <div className="scenario-win-balance-bar">
+              <span style={{ width: `${orderSharePercent}%` }} />
+            </div>
+          </div>
+          <div className="population-grid mb-4">
+            <RealmPanel
+              careers={orderRows}
+              maxCount={maxCount}
+              realmName="Order"
+              total={orderTotal}
+            />
+            <RealmPanel
+              careers={destructionRows}
+              maxCount={maxCount}
+              realmName="Destruction"
+              total={destructionTotal}
+            />
+          </div>
+          <table className="table is-fullwidth population-table">
+            <thead>
+              <tr>
+                <th>Class</th>
+                <th>Realm</th>
+                <th>Active characters</th>
+                <th>% of realm</th>
               </tr>
-            );
-          })}
-        </tbody>
-      </table>
+            </thead>
+            <tbody>
+              {tableRows.map((row) => {
+                const realmTotal =
+                  row.realm === REALM_ORDER ? orderTotal : destructionTotal;
+                const share =
+                  realmTotal === 0 ? 0 : (row.count / realmTotal) * 100;
+                return (
+                  <tr key={row.career}>
+                    <td>
+                      <img
+                        alt={row.career}
+                        height={20}
+                        src={careerIcon(row.career)}
+                        width={20}
+                      />{' '}
+                      {scenarioCareerName(row.career)}
+                    </td>
+                    <td
+                      className={
+                        row.realm === REALM_ORDER
+                          ? 'scenario-breakdown-order'
+                          : 'scenario-breakdown-destruction'
+                      }
+                    >
+                      {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
+                    </td>
+                    <td>{row.count.toLocaleString()}</td>
+                    <td>{share.toFixed(1)}%</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </>
+      )}
     </>
   );
 };
