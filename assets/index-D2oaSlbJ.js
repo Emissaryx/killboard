@@ -2315,13 +2315,12 @@ function print() { __p += __j.call(arguments, '') }
   query GetVendorItemsFromCreature(
     $creatureId: ID!
     $first: Int
-    $last: Int
-    $before: String
     $after: String
   ) {
     creature(id: $creatureId) {
       id
-      vendorItems(first: $first, last: $last, before: $before, after: $after) {
+      vendorItems(first: $first, after: $after) {
+        totalCount
         nodes {
           count
           item {
@@ -2342,13 +2341,11 @@ function print() { __p += __j.call(arguments, '') }
         pageInfo {
           hasNextPage
           endCursor
-          hasPreviousPage
-          startCursor
         }
       }
     }
   }
-`,uE=({creatureId:e})=>{let{t}=J([`common`,`components`]),{loading:n,error:r,data:i,refetch:a}=V(lE,{variables:{creatureId:e,first:10}});if(n)return(0,Q.jsx)(`progress`,{className:`progress`});if(r)return(0,Q.jsx)($,{name:r.name,message:r.message});let o=i?.creature?.vendorItems;if(o?.nodes==null)return(0,Q.jsx)($,{customText:t(`common:notFound`)});if(o?.nodes==null)return null;let{pageInfo:s}=o;return(0,Q.jsxs)(Q.Fragment,{children:[(0,Q.jsxs)(`table`,{className:`table is-striped is-fullwidth`,children:[(0,Q.jsx)(`thead`,{children:(0,Q.jsxs)(`tr`,{children:[(0,Q.jsx)(`th`,{children:t(`components:itemVendors.item`)}),(0,Q.jsx)(`th`,{children:t(`components:itemVendors.price`)})]})}),(0,Q.jsx)(`tbody`,{children:o.nodes.map(e=>(0,Q.jsxs)(`tr`,{children:[(0,Q.jsx)(`td`,{children:(0,Q.jsxs)(`span`,{className:`icon-text`,children:[(0,Q.jsx)(`figure`,{className:`image is-24x24 mx-1`,children:(0,Q.jsx)(`img`,{src:e.item.iconUrl,alt:`Item Icon`})}),(0,Q.jsx)(K,{to:`/item/${e.item.id}`,className:`mr-1`,children:e.item.name}),`x`,e.count]})}),(0,Q.jsxs)(`td`,{children:[(0,Q.jsx)(IT,{price:e.price}),e.requiredItems.map(e=>(0,Q.jsxs)(`span`,{className:`icon-text`,children:[(0,Q.jsx)(`figure`,{className:`image is-24x24 mx-1`,children:(0,Q.jsx)(`img`,{src:e.item.iconUrl,alt:`Item Icon`})}),(0,Q.jsx)(K,{to:`/item/${e.item.id}`,className:`mr-1`,children:e.item.name}),`x`,e.count]},e.item.id))]})]},e.item.id))})]}),(0,Q.jsx)(kg,{pageInfo:s,refetch:a,perPage:10})]})},dE=B`
+`,uE=({creatureId:e})=>{let{t}=J([`common`,`components`]),n=Dl(),[r,i]=(0,_.useState)(``),[a,o]=(0,_.useState)([]),[s,c]=(0,_.useState)(0),[l,u]=(0,_.useState)(!0),[d,f]=(0,_.useState)();if((0,_.useEffect)(()=>{let t=!1,r=new AbortController;return(async()=>{u(!0),f(void 0),o([]);let i,a=[];try{do{let s=(await n.query({context:{fetchOptions:{signal:r.signal}},fetchPolicy:`cache-first`,query:lE,variables:{after:i,creatureId:e,first:50}})).data?.creature?.vendorItems;if(!s||(a.push(...s.nodes??[]),i=s.pageInfo.endCursor??void 0,t||(c(s.totalCount),o([...a])),!s.pageInfo.hasNextPage||!i))break}while(!t)}catch(e){!t&&!r.signal.aborted&&f(e instanceof Error?e:Error(`Unable to load vendor items.`))}finally{t||u(!1)}})(),()=>{t=!0,r.abort()}},[n,e]),l&&a.length===0)return(0,Q.jsx)(`progress`,{className:`progress`});if(d)return(0,Q.jsx)($,{name:d.name,message:d.message});if(a.length===0)return(0,Q.jsx)($,{customText:t(`common:notFound`)});let p=r?a.filter(e=>e.item.name.toLowerCase().includes(r.toLowerCase())):a;return(0,Q.jsxs)(Q.Fragment,{children:[(0,Q.jsx)(`div`,{className:`filter-grid`,children:(0,Q.jsxs)(`label`,{children:[(0,Q.jsx)(`span`,{children:t(`components:itemVendors.filterItems`)}),(0,Q.jsx)(`div`,{className:`control`,children:(0,Q.jsx)(`input`,{className:`input`,type:`search`,placeholder:t(`components:itemVendors.item`),value:r,onChange:e=>i(e.target.value)})})]})}),l&&(0,Q.jsxs)(`p`,{className:`mb-2`,children:[`Gathering `,a.length,` of `,s||`…`,` items…`]}),(0,Q.jsxs)(`div`,{className:`vendor-items-scroll-box`,children:[(0,Q.jsxs)(`table`,{className:`table is-striped is-fullwidth`,children:[(0,Q.jsx)(`thead`,{children:(0,Q.jsxs)(`tr`,{children:[(0,Q.jsx)(`th`,{children:t(`components:itemVendors.item`)}),(0,Q.jsx)(`th`,{children:t(`components:itemVendors.price`)})]})}),(0,Q.jsx)(`tbody`,{children:p.map(e=>(0,Q.jsxs)(`tr`,{children:[(0,Q.jsx)(`td`,{children:(0,Q.jsxs)(`span`,{className:`icon-text`,children:[(0,Q.jsx)(`figure`,{className:`image is-24x24 mx-1`,children:(0,Q.jsx)(`img`,{src:e.item.iconUrl,alt:`Item Icon`})}),(0,Q.jsx)(K,{to:`/item/${e.item.id}`,className:`mr-1`,children:e.item.name}),`x`,e.count]})}),(0,Q.jsxs)(`td`,{children:[(0,Q.jsx)(IT,{price:e.price}),e.requiredItems.map(e=>(0,Q.jsxs)(`span`,{className:`icon-text`,children:[(0,Q.jsx)(`figure`,{className:`image is-24x24 mx-1`,children:(0,Q.jsx)(`img`,{src:e.item.iconUrl,alt:`Item Icon`})}),(0,Q.jsx)(K,{to:`/item/${e.item.id}`,className:`mr-1`,children:e.item.name}),`x`,e.count]},e.item.id))]})]},e.item.id))})]}),p.length===0&&(0,Q.jsx)(`p`,{className:`p-3`,children:t(`common:noResults`)})]})]})},dE=B`
   query GetCreature($id: ID!) {
     creature(id: $id) {
       id
