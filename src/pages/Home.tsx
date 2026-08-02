@@ -9,14 +9,14 @@ import { MonthlyGuildLeaderboard } from '@/components/kill/MonthlyLeaderboard.Gu
 import { WeeklyLeaderboardGuild } from '@/components/kill/WeeklyLeaderboardGuild';
 import { ScenarioList } from '@/components/scenario/ScenarioList';
 import { LatestSkirmishes } from '@/components/skirmish/LatestSkirmishes';
-import { CharacterPopulation } from '@/components/population/CharacterPopulation';
+import { ClassActivity } from '@/components/classActivity/ClassActivity';
 import { TopSkirmishes } from '@/components/skirmish/TopSkirmishes';
 import type { ReactElement } from 'react';
 
 export const Home = ({
   tab,
 }: {
-  tab: 'players' | 'guilds' | 'scenarios' | 'skirmishes' | 'population';
+  tab: 'players' | 'guilds' | 'scenarios' | 'skirmishes' | 'classActivity';
 }): ReactElement => {
   const { t } = useTranslation();
 
@@ -30,8 +30,8 @@ export const Home = ({
             as the other tabs, rather than rendering their content inline
             in Home. The ranked leaderboard page intentionally isn't
             added here. */}
-        <li className={clsx({ 'is-active': tab === 'population' })}>
-          <Link to="/population">{t('pages:home.showPopulation')}</Link>
+        <li className={clsx({ 'is-active': tab === 'classActivity' })}>
+          <Link to="/class-activity">{t('pages:home.showClassActivity')}</Link>
         </li>
         <li>
           <Link to="/creatures">{t('pages:home.showCreatures')}</Link>
@@ -62,7 +62,7 @@ export const Home = ({
         </li>
       </div>
       {tab === 'scenarios' && <ScenarioList loadMore perPage={10} />}
-      {tab === 'population' && <CharacterPopulation />}
+      {tab === 'classActivity' && <ClassActivity />}
       {tab === 'players' && (
         <>
           <SearchBox isPlayer />
