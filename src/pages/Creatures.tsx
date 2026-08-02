@@ -1,93 +1,143 @@
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { gql } from '@apollo/client';
-import { useQuery } from '@apollo/client/react';
-import useWindowDimensions from '@/hooks/useWindowDimensions';
-import {
-  Realm,
-  type CreatureFilterInput,
-  type Query,
-} from '@/__generated__/graphql';
-import { ErrorMessage } from '@/components/global/ErrorMessage';
-import { SearchBox } from '@/components/global/SearchBox';
-import { QueryPagination } from '@/components/global/QueryPagination';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import clsx from 'clsx';
+import useWindowDimensions from '@/hooks/useWindowDimensions';
+import { useCatalogData } from '@/hooks/useCatalogData';
+import { SortConfigDirection, useSortableData } from '@/hooks/useSortableData';
+import { ErrorMessage } from '@/components/global/ErrorMessage';
+import { SearchBox } from '@/components/global/SearchBox';
+import { ClientPagination } from '@/components/global/ClientPagination';
+import type { CreatureTitle } from '@/__generated__/graphql';
 import { creatureTitleIcon, creatureTitleLabel } from '../utils';
 
-const CREATURES = gql`
-  query GetCreatures(
-    $first: Int
-    $last: Int
-    $before: String
-    $after: String
-    $where: CreatureFilterInput
-  ) {
-    creatures(
-      first: $first
-      last: $last
-      before: $before
-      after: $after
-      where: $where
-    ) {
-      nodes {
-        id
-        name
-        realm
-        title
-        spawns {
-          zone {
-            id
-            name
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-        hasPreviousPage
-        startCursor
-      }
+const PER_PAGE = 25;
+
+interface CatalogCreature {
+  id: string;
+  locations: string[];
+  name: string;
+  realm: 'DESTRUCTION' | 'ORDER' | null;
+  title: string;
+}
+
+interface CreatureRow {
+  id: string;
+  idNum: number;
+  location: string;
+  locationCount: number;
+  name: string;
+  realm: 'DESTRUCTION' | 'ORDER' | null;
+  realmSort: string;
+  role: string;
+  title: string;
+}
+
+const matchesFilters = (
+  row: CreatureRow,
+  { name, realm, role, location }: Record<string, string>,
+): boolean => {
+  if (name && !row.name.toLowerCase().includes(name.toLowerCase())) {
+    return false;
+  }
+  if (realm && realm !== 'all') {
+    const rowRealm = row.realm ?? 'NEUTRAL';
+    if (rowRealm !== realm) {
+      return false;
     }
   }
-`;
-
-const getCreatureNameFilter = (
-  search: URLSearchParams,
-): CreatureFilterInput => {
-  const name = search.get('name');
-
-  if (!name) {
-    return {};
+  if (role && role !== 'all' && row.role !== role) {
+    return false;
   }
-
-  return { name: { contains: name } };
+  if (location && location !== 'all' && row.location !== location) {
+    return false;
+  }
+  return true;
 };
 
-const getFilters = (search: URLSearchParams): CreatureFilterInput => ({
-  ...getCreatureNameFilter(search),
-});
-
 export const Creatures = (): ReactElement => {
-  const perPage = 15;
   const [search, setSearch] = useSearchParams();
   const { t } = useTranslation(['common', 'pages', 'enums']);
-  const { loading, error, data, refetch } = useQuery<Query>(CREATURES, {
-    variables: {
-      first: perPage,
-      where: getFilters(search),
-    },
-  });
+  const { items, loading, error, updatedAt } =
+    useCatalogData<CatalogCreature>('/creatures');
   const { width } = useWindowDimensions();
   const isMobile = width <= 768;
+  const [page, setPage] = useState(0);
 
-  // The search box lives outside the loading/error branches below so it
-  // never unmounts while typing -- live filtering refetches on every
-  // keystroke pause, and re-rendering the whole page (search box
-  // included) around a fresh <progress> element used to yank focus out
-  // of the input mid-word.
-  const entries = data?.creatures?.nodes;
-  const { pageInfo } = data?.creatures ?? {};
+  const nameFilter = search.get('name') ?? '';
+  const realmFilter = search.get('realm') ?? 'all';
+  const roleFilter = search.get('role') ?? 'all';
+  const locationFilter = search.get('location') ?? 'all';
+
+  const rows = useMemo<CreatureRow[]>(
+    () =>
+      (items ?? []).map((creature) => ({
+        id: creature.id,
+        idNum: Number(creature.id),
+        location: creature.locations[0] ?? '',
+        locationCount: creature.locations.length,
+        name: creature.name,
+        realm: creature.realm,
+        realmSort: creature.realm ?? 'NEUTRAL',
+        role: creatureTitleLabel(creature.title as CreatureTitle),
+        title: creature.title,
+      })),
+    [items],
+  );
+
+  const roleOptions = useMemo(
+    () =>
+      [...new Set(rows.map((row) => row.role).filter(Boolean))].toSorted(
+        (a, b) => a.localeCompare(b),
+      ),
+    [rows],
+  );
+
+  const locationOptions = useMemo(
+    () =>
+      [...new Set(rows.map((row) => row.location).filter(Boolean))].toSorted(
+        (a, b) => a.localeCompare(b),
+      ),
+    [rows],
+  );
+
+  const filteredRows = useMemo(
+    () =>
+      rows.filter((row) =>
+        matchesFilters(row, {
+          location: locationFilter,
+          name: nameFilter,
+          realm: realmFilter,
+          role: roleFilter,
+        }),
+      ),
+    [rows, nameFilter, realmFilter, roleFilter, locationFilter],
+  );
+
+  const {
+    items: sortedRows,
+    requestSort,
+    sortConfig,
+  } = useSortableData(filteredRows, {
+    direction: SortConfigDirection.ascending,
+    key: 'idNum',
+  });
+
+  const filterKey = `${nameFilter}|${realmFilter}|${roleFilter}|${locationFilter}`;
+  useEffect(() => {
+    setPage(0);
+  }, [filterKey]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / PER_PAGE));
+  const pageRows = sortedRows.slice(page * PER_PAGE, (page + 1) * PER_PAGE);
+
+  const getSortClass = (key: string): string => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return '';
+    }
+    return sortConfig.direction;
+  };
 
   return (
     <div className="container is-max-widescreen mt-2">
@@ -106,126 +156,235 @@ export const Creatures = (): ReactElement => {
         <label>
           <span>{t('pages:creatures.search')}</span>
           <SearchBox
-            initialQuery={search.get('name') || ''}
+            initialQuery={nameFilter}
             onSubmit={(event) => {
               search.set('name', event);
               setSearch(search);
             }}
           />
         </label>
+        <label>
+          <span>{t('pages:creatures.realm')}</span>
+          <div className="select">
+            <select
+              value={realmFilter}
+              onChange={(event) => {
+                search.set('realm', event.target.value);
+                setSearch(search);
+              }}
+            >
+              <option value="all">{t('pages:creatures.filterAll')}</option>
+              <option value="ORDER">{t('common:realmOrder')}</option>
+              <option value="DESTRUCTION">
+                {t('common:realmDestruction')}
+              </option>
+              <option value="NEUTRAL">{t('common:realmNeutral')}</option>
+            </select>
+          </div>
+        </label>
+        <label>
+          <span>{t('pages:creatures.role')}</span>
+          <div className="select">
+            <select
+              value={roleFilter}
+              onChange={(event) => {
+                search.set('role', event.target.value);
+                setSearch(search);
+              }}
+            >
+              <option value="all">{t('pages:creatures.filterAll')}</option>
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </div>
+        </label>
+        <label>
+          <span>{t('pages:creatures.location')}</span>
+          <div className="select">
+            <select
+              value={locationFilter}
+              onChange={(event) => {
+                search.set('location', event.target.value);
+                setSearch(search);
+              }}
+            >
+              <option value="all">{t('pages:creatures.filterAll')}</option>
+              {locationOptions.map((location) => (
+                <option key={location} value={location}>
+                  {location}
+                </option>
+              ))}
+            </select>
+          </div>
+        </label>
       </div>
 
-      {loading && entries == null && <progress className="progress" />}
+      {loading && <progress className="progress" />}
       {!loading && error && (
         <ErrorMessage name={error.name} message={error.message} />
       )}
-      {!loading && !error && entries == null && (
-        <ErrorMessage customText={t('common:notFound')} />
-      )}
-      {entries != null && (
-        <div className="table-container">
-          <table
-            className={clsx(
-              'table',
-              'is-striped',
-              'is-hoverable',
-              isMobile ? 'is-narrow' : 'is-fullwidth',
+      {!loading && !error && (
+        <>
+          <p className="is-size-7 has-text-grey mb-2">
+            {sortedRows.length.toLocaleString()} /{' '}
+            {rows.length.toLocaleString()}
+            {updatedAt && (
+              <>
+                {' · '}
+                {t('pages:creatures.dataSyncedAt')}{' '}
+                {new Date(updatedAt).toLocaleString()}
+              </>
             )}
-          >
-            <thead>
-              <tr>
-                <th>{t('pages:creatures.id')}</th>
-                <th>{t('pages:creatures.name')}</th>
-                <th>{t('pages:creatures.realm')}</th>
-                <th>{t('pages:creatures.role')}</th>
-                <th>{t('pages:creatures.location')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((creature) => {
-                const zoneNames = [
-                  ...new Set(
-                    creature.spawns
-                      .map((spawn) => spawn.zone?.name)
-                      .filter((name): name is string => Boolean(name)),
-                  ),
-                ];
-                const icon = creatureTitleIcon(creature.title);
-                const label = creatureTitleLabel(creature.title);
-
-                return (
-                  <tr key={creature.id}>
-                    <td>{creature.id}</td>
-                    <td>
-                      <Link to={`/creature/${creature.id}`}>
-                        {creature.name}
-                      </Link>
-                    </td>
-                    <td>
-                      {creature.realm === Realm.Order && (
-                        <span className="icon-text">
-                          <figure className="image is-24x24 m-0 mr-1">
-                            <img
-                              src="/images/icons/scenario/order.png"
-                              width={24}
-                              height={24}
-                              alt={t('common:realmOrder')}
-                            />
-                          </figure>
-                          {t('common:realmOrder')}
-                        </span>
+          </p>
+          {sortedRows.length === 0 ? (
+            <ErrorMessage customText={t('common:noResults')} />
+          ) : (
+            <div className="table-container">
+              <table
+                className={clsx(
+                  'table',
+                  'is-striped',
+                  'is-hoverable',
+                  isMobile ? 'is-narrow' : 'is-fullwidth',
+                )}
+              >
+                <thead className="is-relative">
+                  <tr>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('idNum'),
                       )}
-                      {creature.realm === Realm.Destruction && (
-                        <span className="icon-text">
-                          <figure className="image is-24x24 m-0 mr-1">
-                            <img
-                              src="/images/icons/scenario/destruction.png"
-                              width={24}
-                              height={24}
-                              alt={t('common:realmDestruction')}
-                            />
-                          </figure>
-                          {t('common:realmDestruction')}
-                        </span>
+                      onClick={() => requestSort('idNum')}
+                    >
+                      {t('pages:creatures.id')}
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('name'),
                       )}
-                      {creature.realm == null && (
-                        <span>{t('common:realmNeutral')}</span>
+                      onClick={() => requestSort('name')}
+                    >
+                      {t('pages:creatures.name')}
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('realmSort'),
                       )}
-                    </td>
-                    <td>
-                      {label && (
-                        <span className="icon-text">
-                          {icon && (
-                            <figure className="image is-24x24 m-0 mr-1">
-                              <img src={icon} width={24} height={24} alt="" />
-                            </figure>
-                          )}
-                          {label}
-                        </span>
+                      onClick={() => requestSort('realmSort')}
+                    >
+                      {t('pages:creatures.realm')}
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('role'),
                       )}
-                    </td>
-                    <td>
-                      {zoneNames.length > 0 && (
-                        <span>
-                          {zoneNames[0]}
-                          {zoneNames.length > 1 &&
-                            ` (+${zoneNames.length - 1})`}
-                        </span>
+                      onClick={() => requestSort('role')}
+                    >
+                      {t('pages:creatures.role')}
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('location'),
                       )}
-                    </td>
+                      onClick={() => requestSort('location')}
+                    >
+                      {t('pages:creatures.location')}
+                    </th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {entries != null && pageInfo && (
-        <QueryPagination
-          pageInfo={pageInfo}
-          perPage={perPage}
-          refetch={refetch}
-        />
+                </thead>
+                <tbody>
+                  {pageRows.map((row) => {
+                    const icon = creatureTitleIcon(row.title as CreatureTitle);
+
+                    return (
+                      <tr key={row.id}>
+                        <td>{row.id}</td>
+                        <td>
+                          <Link to={`/creature/${row.id}`}>{row.name}</Link>
+                        </td>
+                        <td>
+                          {row.realm === 'ORDER' && (
+                            <span className="icon-text">
+                              <figure className="image is-24x24 m-0 mr-1">
+                                <img
+                                  src="/images/icons/scenario/order.png"
+                                  width={24}
+                                  height={24}
+                                  alt={t('common:realmOrder')}
+                                />
+                              </figure>
+                              {t('common:realmOrder')}
+                            </span>
+                          )}
+                          {row.realm === 'DESTRUCTION' && (
+                            <span className="icon-text">
+                              <figure className="image is-24x24 m-0 mr-1">
+                                <img
+                                  src="/images/icons/scenario/destruction.png"
+                                  width={24}
+                                  height={24}
+                                  alt={t('common:realmDestruction')}
+                                />
+                              </figure>
+                              {t('common:realmDestruction')}
+                            </span>
+                          )}
+                          {row.realm == null && (
+                            <span>{t('common:realmNeutral')}</span>
+                          )}
+                        </td>
+                        <td>
+                          {row.role && (
+                            <span className="icon-text">
+                              {icon && (
+                                <figure className="image is-24x24 m-0 mr-1">
+                                  <img
+                                    src={icon}
+                                    width={24}
+                                    height={24}
+                                    alt=""
+                                  />
+                                </figure>
+                              )}
+                              {row.role}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          {row.location && (
+                            <span>
+                              {row.location}
+                              {row.locationCount > 1 &&
+                                ` (+${row.locationCount - 1})`}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <ClientPagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+          />
+        </>
       )}
     </div>
   );

@@ -137,7 +137,9 @@
     "creatureSubType": "Type",
     "realm": "Realm",
     "role": "Role",
-    "location": "Location"
+    "location": "Location",
+    "dataSyncedAt": "Catalog data last synced",
+    "filterAll": "All"
   },
   "creature": {
     "creatureId": "Creature #{{creatureId}}",
@@ -165,12 +167,25 @@
   },
   "quests": {
     "title": "Quests",
+    "id": "ID",
     "search": "Search",
     "name": "Name",
     "xp": "Xp",
     "gold": "Gold",
     "given": "Rewards",
-    "choice": "Choices"
+    "choice": "Choices",
+    "level": "Level",
+    "type": "Type",
+    "dataSyncedAt": "Catalog data last synced",
+    "filterAllTypes": "All Types",
+    "typeEpic": "Epic",
+    "typePlayerKill": "Player Kill",
+    "typeRvrGroup": "RvR (Group)",
+    "typeRvr": "RvR",
+    "typeTravel": "Travel",
+    "typeTome": "Tome",
+    "typeRepeatable": "Repeatable",
+    "typeStandard": "Standard"
   },
   "quest": {
     "questId": "Quest #{{questId}}",
