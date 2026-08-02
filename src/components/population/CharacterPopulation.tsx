@@ -1,5 +1,3 @@
-import { gql } from '@apollo/client';
-import { useApolloClient } from '@apollo/client/react';
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -9,22 +7,25 @@ import { assetUrl, careerIcon } from '@/utils';
 import { scenarioCareerName } from '@/components/scenario/scenarioRoles';
 import { ErrorMessage } from '@/components/global/ErrorMessage';
 
-// A full-month activeCharactersStats(from, to, career) call is an expensive
-// aggregate scan on its own. Aliasing all 24 careers plus the overall total
-// into a single query made the server resolve them one after another inside
-// one request, which blew past its 1-minute timeout for any month with more
-// than a few hours of data. Firing 25 separate requests instead lets the
-// browser run them concurrently, so each one only has to clear its own
-// timeout window rather than sharing one across all 25.
-const ACTIVE_CHARACTER_STAT = gql`
-  query GetActiveCharacterStat(
-    $from: DateTime!
-    $to: DateTime!
-    $career: Career
-  ) {
-    activeCharactersStats(from: $from, to: $to, career: $career)
-  }
-`;
+// This page used to ask production-api.waremu.com's activeCharactersStats
+// for a full month directly, which is an expensive live aggregate scan —
+// busy months reliably blew past the API's own ~60s timeout even split
+// into 25 per-career requests. Instead, a small Cloudflare Worker
+// (killboard-population) polls Skirmishes every 5 minutes and keeps a
+// running de-duplicated ledger in D1. This page just reads the
+// pre-aggregated totals from that Worker, so a month's numbers come back
+// instantly regardless of how much activity happened.
+const POPULATION_WORKER_URL = 'https://killboard-population.tcates79.workers.dev';
+
+// The Worker started polling on 2026-08-02. Months before that have no
+// live-polled data. January 2026 is the one exception — it was backfilled
+// once, directly in the Worker's database, from a scenario-participation
+// sweep (so it's a same-ballpark estimate, not Skirmish-complete). Every
+// other month before the launch month genuinely has nothing recorded, and
+// that's different from "zero people played" — worth saying so rather than
+// silently showing a 0.
+const POLLER_LAUNCH_MONTH = '2026-08';
+const BACKFILLED_MONTHS = new Set(['2026-01']);
 
 const REALM_ORDER = 0;
 const REALM_DESTRUCTION = 1;
@@ -65,6 +66,13 @@ interface PopulationRow {
   career: Career;
   realm: 0 | 1;
   count: number;
+}
+
+interface PopulationResponse {
+  month: string;
+  total: number;
+  byCareer: Record<string, { realm: 0 | 1; count: number }>;
+  coverageSince: string | null;
 }
 
 const RealmPanel = ({
@@ -116,7 +124,6 @@ const RealmPanel = ({
 );
 
 export const CharacterPopulation = (): ReactElement => {
-  const client = useApolloClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const currentMonth = format(new Date(), 'yyyy-MM');
   const monthParam = searchParams.get('month') ?? '';
@@ -124,47 +131,36 @@ export const CharacterPopulation = (): ReactElement => {
 
   const [rows, setRows] = useState<PopulationRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [coverageSince, setCoverageSince] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error>();
 
   useEffect(() => {
-    const [year, monthIndex] = month.split('-').map(Number);
-    const from = new Date(year, monthIndex - 1, 1);
-    // Upper bound is the first moment of the *next* month, so the query
-    // covers the entire selected month regardless of whether the API
-    // treats `to` as inclusive or exclusive.
-    const to = new Date(year, monthIndex, 1);
-    const variables = { from: from.toISOString(), to: to.toISOString() };
-
     let cancelled = false;
     setLoading(true);
     setError(undefined);
 
-    const loadAll = async (): Promise<void> => {
+    const loadPopulation = async (): Promise<void> => {
       try {
-        const [totalResult, ...careerResults] = await Promise.all([
-          client.query<{ activeCharactersStats: number | null }>({
-            fetchPolicy: 'cache-first',
-            query: ACTIVE_CHARACTER_STAT,
-            variables,
-          }),
-          ...CAREER_META.map((meta) =>
-            client.query<{ activeCharactersStats: number | null }>({
-              fetchPolicy: 'cache-first',
-              query: ACTIVE_CHARACTER_STAT,
-              variables: { ...variables, career: meta.career },
-            }),
-          ),
-        ]);
+        const response = await fetch(
+          `${POPULATION_WORKER_URL}/population?month=${month}`,
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Population Worker responded with ${response.status}`,
+          );
+        }
+        const data = (await response.json()) as PopulationResponse;
         if (cancelled) {
           return;
         }
-        setTotal(totalResult.data?.activeCharactersStats ?? 0);
+        setTotal(data.total);
+        setCoverageSince(data.coverageSince);
         setRows(
-          CAREER_META.map((meta, index) => ({
+          CAREER_META.map((meta) => ({
             career: meta.career,
             realm: meta.realm,
-            count: careerResults[index]?.data?.activeCharactersStats ?? 0,
+            count: data.byCareer[meta.career]?.count ?? 0,
           })),
         );
       } catch (caughtError) {
@@ -182,11 +178,11 @@ export const CharacterPopulation = (): ReactElement => {
       }
     };
 
-    void loadAll();
+    void loadPopulation();
     return () => {
       cancelled = true;
     };
-  }, [client, month]);
+  }, [month]);
 
   const onMonthChange = (value: string): void => {
     const next = new URLSearchParams(searchParams);
@@ -205,25 +201,17 @@ export const CharacterPopulation = (): ReactElement => {
   );
 
   if (error) {
-    // A full calendar month is an expensive aggregate scan on the API side
-    // — even split into 25 separate requests, a busy month can still clear
-    // the API's own 1-minute-per-request timeout. This isn't fixable from
-    // here; surface it plainly rather than showing a raw GraphQL error.
-    if (error.message.toLowerCase().includes('timeout')) {
-      return (
-        <div className="notification is-warning">
-          <p>
-            <strong>{monthLabel}</strong> has too much activity for the API to
-            total up within its own time limit. This isn&apos;t something the
-            page can retry its way around — try a more recent month (it only has
-            to scan what&apos;s happened so far), or ask about widening the
-            timeout on the API side for a full month.
-          </p>
-        </div>
-      );
-    }
     return <ErrorMessage message={error.message} name={error.name} />;
   }
+
+  // Months before the poller existed (and that weren't separately
+  // backfilled) genuinely have no data — that's different from "nobody
+  // played," so say so instead of quietly showing a 0.
+  const isUntrackedMonth =
+    !loading &&
+    total === 0 &&
+    month < POLLER_LAUNCH_MONTH &&
+    !BACKFILLED_MONTHS.has(month);
 
   const orderRows = rows
     .filter((row) => row.realm === REALM_ORDER)
@@ -261,17 +249,41 @@ export const CharacterPopulation = (): ReactElement => {
           <span>active characters in {monthLabel}</span>
         </div>
       </div>
-      {loading ? (
-        <div className="scenario-window-loading">
-          <progress className="progress is-small is-primary" />
-          <strong>Gathering population for {monthLabel}…</strong>
-          <span>
-            Fetching each class separately so a busy full month doesn&apos;t
-            time out the whole page.
-          </span>
-        </div>
-      ) : (
+      {(() => {
+        if (loading) {
+          return (
+            <div className="scenario-window-loading">
+              <progress className="progress is-small is-primary" />
+              <strong>Loading population for {monthLabel}…</strong>
+            </div>
+          );
+        }
+        if (isUntrackedMonth) {
+          return (
+            <div className="notification is-warning">
+              <p>
+                <strong>{monthLabel}</strong> is before this page started
+                tracking population (August 2026), so there&apos;s no data
+                recorded for it — that&apos;s not the same as zero players.
+              </p>
+            </div>
+          );
+        }
+        return (
         <>
+          {month === currentMonth && coverageSince != null && (
+            <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+              Counting through {format(new Date(coverageSince), 'PPp')} so
+              far this month.
+            </p>
+          )}
+          {BACKFILLED_MONTHS.has(month) && (
+            <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+              This month was backfilled from scenario participation only, so
+              it likely undercounts players who never queued for a
+              scenario.
+            </p>
+          )}
           <div className="scenario-win-balance mb-4">
             <div className="scenario-win-balance-totals">
               <span>
@@ -342,7 +354,8 @@ export const CharacterPopulation = (): ReactElement => {
             </tbody>
           </table>
         </>
-      )}
+        );
+      })()}
     </>
   );
 };
