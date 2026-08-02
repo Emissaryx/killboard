@@ -104,10 +104,19 @@ const usePopulationRange = (period: Period): RangeState => {
         const response = await fetch(
           `${POPULATION_WORKER_URL}/population-range?from=${period.from}&to=${period.to}`,
         );
-        if (!response.ok) {
-          throw new Error(`Population Worker responded with ${response.status}`);
+        const data = (await response.json()) as PopulationRangeResponse & { error?: string };
+        // Belt-and-suspenders: don't trust response.ok alone. The Worker
+        // always returns an `error` field (never `byCareer`) on a
+        // validation failure, whatever HTTP status carries it - checking
+        // for that field directly means a malformed request (or a status
+        // code an intermediary proxy/cache mangles) shows a clean error
+        // message instead of crashing on `data.byCareer[...]` being
+        // undefined.
+        if (!response.ok || data.error || !data.byCareer) {
+          throw new Error(
+            data.error ?? `Population Worker responded with ${response.status}`,
+          );
         }
-        const data = (await response.json()) as PopulationRangeResponse;
         if (cancelled) {
           return;
         }
