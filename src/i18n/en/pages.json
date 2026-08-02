@@ -27,7 +27,7 @@
   "home": {
     "showGuildLeaderboard": "Guilds",
     "showPlayerLeaderboard": "Players",
-    "showPopulation": "Class Activity",
+    "showClassActivity": "Class Activity",
     "showScenarios": "Scenarios",
     "showSkirmishes": "Skirmishes",
     "showItems": "Items",
