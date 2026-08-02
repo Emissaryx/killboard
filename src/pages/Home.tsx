@@ -9,13 +9,14 @@ import { MonthlyGuildLeaderboard } from '@/components/kill/MonthlyLeaderboard.Gu
 import { WeeklyLeaderboardGuild } from '@/components/kill/WeeklyLeaderboardGuild';
 import { ScenarioList } from '@/components/scenario/ScenarioList';
 import { LatestSkirmishes } from '@/components/skirmish/LatestSkirmishes';
+import { CharacterPopulation } from '@/components/population/CharacterPopulation';
 import { TopSkirmishes } from '@/components/skirmish/TopSkirmishes';
 import type { ReactElement } from 'react';
 
 export const Home = ({
   tab,
 }: {
-  tab: 'players' | 'guilds' | 'scenarios' | 'skirmishes';
+  tab: 'players' | 'guilds' | 'scenarios' | 'skirmishes' | 'population';
 }): ReactElement => {
   const { t } = useTranslation();
 
@@ -34,10 +35,12 @@ export const Home = ({
         <li className={clsx({ 'is-active': tab === 'skirmishes' })}>
           <Link to="/skirmishes">{t('pages:home.showSkirmishes')}</Link>
         </li>
+        <li className={clsx({ 'is-active': tab === 'population' })}>
+          <Link to="/population">{t('pages:home.showPopulation')}</Link>
+        </li>
       </div>
-      {tab === 'scenarios' && (
-        <ScenarioList loadMore perPage={10} />
-      )}
+      {tab === 'scenarios' && <ScenarioList loadMore perPage={10} />}
+      {tab === 'population' && <CharacterPopulation />}
       {tab === 'players' && (
         <>
           <SearchBox isPlayer />
