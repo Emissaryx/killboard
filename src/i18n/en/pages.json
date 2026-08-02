@@ -27,9 +27,27 @@
   "home": {
     "showGuildLeaderboard": "Guilds",
     "showPlayerLeaderboard": "Players",
-    "showPopulation": "Population",
+    "showPopulation": "Class Activity",
     "showScenarios": "Scenarios",
-    "showSkirmishes": "Skirmishes"
+    "showSkirmishes": "Skirmishes",
+    "showItems": "Items",
+    "showQuests": "Quests",
+    "showCreatures": "Creatures",
+    "showInstances": "Instances",
+    "showStorylines": "Storylines"
+  },
+  "classActivity": {
+    "overview": "Overview",
+    "compare": "Compare",
+    "periodA": "Period A",
+    "periodB": "Period B",
+    "granularity": "View by",
+    "month": "Month",
+    "quarter": "Quarter",
+    "halfYear": "Half-Year",
+    "year": "Year",
+    "trailing12Months": "Last 12 Months",
+    "change": "Change"
   },
   "killPage": {
     "killer": "Killer",
