@@ -198,7 +198,30 @@ export const CharacterPopulation = (): ReactElement => {
     setSearchParams(next, { replace: true });
   };
 
+  const [labelYear, labelMonthIndex] = month.split('-').map(Number);
+  const monthLabel = format(
+    new Date(labelYear, labelMonthIndex - 1, 1),
+    'MMMM yyyy',
+  );
+
   if (error) {
+    // A full calendar month is an expensive aggregate scan on the API side
+    // — even split into 25 separate requests, a busy month can still clear
+    // the API's own 1-minute-per-request timeout. This isn't fixable from
+    // here; surface it plainly rather than showing a raw GraphQL error.
+    if (error.message.toLowerCase().includes('timeout')) {
+      return (
+        <div className="notification is-warning">
+          <p>
+            <strong>{monthLabel}</strong> has too much activity for the API to
+            total up within its own time limit. This isn&apos;t something the
+            page can retry its way around — try a more recent month (it only has
+            to scan what&apos;s happened so far), or ask about widening the
+            timeout on the API side for a full month.
+          </p>
+        </div>
+      );
+    }
     return <ErrorMessage message={error.message} name={error.name} />;
   }
 
@@ -218,8 +241,6 @@ export const CharacterPopulation = (): ReactElement => {
     combinedTotal === 0 ? 50 : (orderTotal / combinedTotal) * 100;
   const maxCount = Math.max(1, ...rows.map((row) => row.count));
   const tableRows = rows.toSorted((a, b) => b.count - a.count);
-  const [year, monthIndex] = month.split('-').map(Number);
-  const monthLabel = format(new Date(year, monthIndex - 1, 1), 'MMMM yyyy');
 
   return (
     <>
