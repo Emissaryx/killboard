@@ -13,13 +13,13 @@ import { type Period, buildMonthPeriod } from './periodUtils';
 // for a full month directly, which is an expensive live aggregate scan —
 // busy months reliably blew past the API's own ~60s timeout even split
 // into 25 per-career requests. Instead, a small Cloudflare Worker
-// (killboard-population) polls Skirmishes every 5 minutes and keeps a
+// (killboard-class-activity) polls Skirmishes every 5 minutes and keeps a
 // running de-duplicated ledger in D1. This page reads pre-aggregated
-// totals from that Worker's /population-range endpoint, which counts
+// totals from that Worker's /class-activity-range endpoint, which counts
 // DISTINCT characters across any inclusive range of calendar-month
 // buckets - a single month, a quarter, a half-year, a year, or a trailing
 // 12-month window are all just different [from, to] ranges to it.
-const POPULATION_WORKER_URL = 'https://killboard-population.tcates79.workers.dev';
+const CLASS_ACTIVITY_WORKER_URL = 'https://killboard-class-activity.tcates79.workers.dev';
 
 const REALM_ORDER = 0;
 const REALM_DESTRUCTION = 1;
@@ -54,13 +54,13 @@ const CAREER_META: {
   { career: Career.Zealot, realm: REALM_DESTRUCTION },
 ];
 
-interface PopulationRow {
+interface ClassActivityRow {
   career: Career;
   realm: 0 | 1;
   count: number;
 }
 
-interface PopulationRangeResponse {
+interface ClassActivityRangeResponse {
   from: string;
   to: string;
   total: number;
@@ -72,7 +72,7 @@ interface PopulationRangeResponse {
 interface RangeState {
   loading: boolean;
   error?: Error;
-  rows: PopulationRow[];
+  rows: ClassActivityRow[];
   total: number;
   monthsWithData: string[];
   coverageSince: string | null;
@@ -86,7 +86,7 @@ const monthsInRange = (from: string, to: string): number => {
   return (toYear - fromYear) * 12 + (toMonth - fromMonth) + 1;
 };
 
-const usePopulationRange = (period: Period): RangeState => {
+const useClassActivityRange = (period: Period): RangeState => {
   const [state, setState] = useState<RangeState>({
     loading: true,
     rows: [],
@@ -102,9 +102,9 @@ const usePopulationRange = (period: Period): RangeState => {
     const load = async (): Promise<void> => {
       try {
         const response = await fetch(
-          `${POPULATION_WORKER_URL}/population-range?from=${period.from}&to=${period.to}`,
+          `${CLASS_ACTIVITY_WORKER_URL}/class-activity-range?from=${period.from}&to=${period.to}`,
         );
-        const data = (await response.json()) as PopulationRangeResponse & { error?: string };
+        const data = (await response.json()) as ClassActivityRangeResponse & { error?: string };
         // Belt-and-suspenders: don't trust response.ok alone. The Worker
         // always returns an `error` field (never `byCareer`) on a
         // validation failure, whatever HTTP status carries it - checking
@@ -114,7 +114,7 @@ const usePopulationRange = (period: Period): RangeState => {
         // undefined.
         if (!response.ok || data.error || !data.byCareer) {
           throw new Error(
-            data.error ?? `Population Worker responded with ${response.status}`,
+            data.error ?? `Class Activity Worker responded with ${response.status}`,
           );
         }
         if (cancelled) {
@@ -160,13 +160,13 @@ const RealmPanel = ({
   realmName,
   total,
 }: {
-  careers: PopulationRow[];
+  careers: ClassActivityRow[];
   maxCount: number;
   realmName: 'Order' | 'Destruction';
   total: number;
 }): ReactElement => (
-  <div className="population-panel">
-    <header className="population-panel-header">
+  <div className="class-activity-panel">
+    <header className="class-activity-panel-header">
       <img
         alt={realmName}
         height={28}
@@ -176,16 +176,16 @@ const RealmPanel = ({
       <h2>{realmName} activity</h2>
       <span>{total.toLocaleString()} active</span>
     </header>
-    <ul className="population-bars">
+    <ul className="class-activity-bars">
       {careers.map(({ career, count }) => (
         <li key={career}>
           <img alt={career} height={20} src={careerIcon(career)} width={20} />
-          <span className="population-bar-name">
+          <span className="class-activity-bar-name">
             {scenarioCareerName(career)}
           </span>
-          <div className="population-bar-track">
+          <div className="class-activity-bar-track">
             <span
-              className={`population-bar-fill population-bar-fill-${
+              className={`class-activity-bar-fill class-activity-bar-fill-${
                 realmName === 'Order' ? 'order' : 'destruction'
               }`}
               style={{
@@ -193,7 +193,7 @@ const RealmPanel = ({
               }}
             />
           </div>
-          <strong className="population-bar-count">
+          <strong className="class-activity-bar-count">
             {count.toLocaleString()}
           </strong>
         </li>
@@ -209,7 +209,7 @@ const ClassActivityOverview = ({
 }): ReactElement => {
   const [period, setPeriod] = useState<Period>(() => buildMonthPeriod(currentMonth));
   const { loading, error, rows, total, monthsWithData, coverageSince } =
-    usePopulationRange(period);
+    useClassActivityRange(period);
 
   if (error) {
     return <ErrorMessage message={error.message} name={error.name} />;
@@ -236,14 +236,14 @@ const ClassActivityOverview = ({
 
   return (
     <>
-      <div className="population-toolbar">
+      <div className="class-activity-toolbar">
         <PeriodPicker
           currentMonth={currentMonth}
           idPrefix="overview"
           value={period}
           onChange={setPeriod}
         />
-        <div className="population-total">
+        <div className="class-activity-total">
           <strong>{loading ? '…' : total.toLocaleString()}</strong>
           <span>active characters in {period.label}</span>
         </div>
@@ -297,7 +297,7 @@ const ClassActivityOverview = ({
                 <span style={{ width: `${orderSharePercent}%` }} />
               </div>
             </div>
-            <div className="population-grid mb-4">
+            <div className="class-activity-grid mb-4">
               <RealmPanel
                 careers={orderRows}
                 maxCount={maxCount}
@@ -311,7 +311,7 @@ const ClassActivityOverview = ({
                 total={destructionTotal}
               />
             </div>
-            <table className="table is-fullwidth population-table">
+            <table className="table is-fullwidth class-activity-table">
               <thead>
                 <tr>
                   <th>Class</th>
@@ -387,8 +387,8 @@ const ClassActivityCompare = ({
   const [periodA, setPeriodA] = useState<Period>(() => buildMonthPeriod(currentMonth));
   const [periodB, setPeriodB] = useState<Period>(() => oneYearBeforeMonth(currentMonth));
 
-  const a = usePopulationRange(periodA);
-  const b = usePopulationRange(periodB);
+  const a = useClassActivityRange(periodA);
+  const b = useClassActivityRange(periodB);
 
   if (a.error || b.error) {
     const err = (a.error ?? b.error) as Error;
@@ -431,10 +431,10 @@ const ClassActivityCompare = ({
 
   return (
     <>
-      <div className="population-toolbar">
+      <div className="class-activity-toolbar">
         <PeriodPicker currentMonth={currentMonth} idPrefix="period-a" value={periodA} onChange={setPeriodA} />
       </div>
-      <div className="population-toolbar mb-4">
+      <div className="class-activity-toolbar mb-4">
         <PeriodPicker currentMonth={currentMonth} idPrefix="period-b" value={periodB} onChange={setPeriodB} />
       </div>
       {loading ? (
@@ -452,7 +452,7 @@ const ClassActivityCompare = ({
                 {periodA.label} — {a.total.toLocaleString()} active
                 {a.monthsWithData.length === 0 && ' (no data recorded)'}
               </div>
-              <div className="population-grid">
+              <div className="class-activity-grid">
                 <RealmPanel
                   careers={orderA}
                   maxCount={maxCount}
@@ -472,7 +472,7 @@ const ClassActivityCompare = ({
                 {periodB.label} — {b.total.toLocaleString()} active
                 {b.monthsWithData.length === 0 && ' (no data recorded)'}
               </div>
-              <div className="population-grid">
+              <div className="class-activity-grid">
                 <RealmPanel
                   careers={orderB}
                   maxCount={maxCount}
@@ -488,7 +488,7 @@ const ClassActivityCompare = ({
               </div>
             </div>
           </div>
-          <table className="table is-fullwidth population-table">
+          <table className="table is-fullwidth class-activity-table">
             <thead>
               <tr>
                 <th>Class</th>
@@ -537,7 +537,7 @@ const ClassActivityCompare = ({
   );
 };
 
-export const CharacterPopulation = (): ReactElement => {
+export const ClassActivity = (): ReactElement => {
   const { t } = useTranslation(['pages']);
   const [subTab, setSubTab] = useState<'overview' | 'compare'>('overview');
   const currentMonth = monthKeyForDate(new Date());
