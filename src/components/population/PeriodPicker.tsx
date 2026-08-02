@@ -30,22 +30,36 @@ export const PeriodPicker = ({
   const { t } = useTranslation(['pages']);
   const years = availableYears(parseMonthKey(currentMonth).year);
 
+  // value.segment means something different per granularity (month
+  // 1-12, quarter 1-4, half 1-2) - it is NOT safe to carry the old
+  // granularity's segment straight into a different granularity's
+  // builder (e.g. reusing August's "8" as a quarter number produces a
+  // nonexistent "quarter 8", which built an out-of-range month string
+  // and crashed the page). So switching granularity always computes a
+  // fresh, sensible default (the quarter/half/year containing
+  // currentMonth) instead of reusing value.segment. Only the dedicated
+  // quarter/half/year <select> controls below (which only ever pass a
+  // segment value that's valid for their own granularity) reuse
+  // value.segment or value.year.
   const onGranularityChange = (granularity: Granularity): void => {
+    const { year, month } = parseMonthKey(currentMonth);
     switch (granularity) {
       case 'month': {
         onChange(buildMonthPeriod(currentMonth));
         return;
       }
       case 'quarter': {
-        onChange(buildQuarterPeriod(value.year, value.segment || 1, currentMonth));
+        const currentQuarter = Math.ceil(month / 3);
+        onChange(buildQuarterPeriod(year, currentQuarter, currentMonth));
         return;
       }
       case 'halfYear': {
-        onChange(buildHalfYearPeriod(value.year, value.segment || 1, currentMonth));
+        const currentHalf = month <= 6 ? 1 : 2;
+        onChange(buildHalfYearPeriod(year, currentHalf, currentMonth));
         return;
       }
       case 'year': {
-        onChange(buildYearPeriod(value.year, currentMonth));
+        onChange(buildYearPeriod(year, currentMonth));
         return;
       }
       case 'trailing12': {
