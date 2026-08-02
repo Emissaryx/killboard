@@ -207,6 +207,144 @@ td.scenariolist-score-destruction {
   color: #ff7474 !important;
 }
 
+.population-toolbar {
+  align-items: center;
+  background: rgba(20, 20, 20, 0.45);
+  display: flex;
+  gap: 1.25rem;
+  justify-content: space-between;
+  padding: 0.65rem 0.85rem;
+}
+
+.population-toolbar label > span {
+  display: block;
+  font-size: 0.72rem;
+  margin-bottom: 0.2rem;
+}
+
+.population-toolbar input {
+  background: rgba(20, 20, 20, 0.9);
+  border: 1px solid rgba(135, 123, 105, 0.4);
+  color: $text-strong;
+  min-height: 34px;
+  padding: 0.35rem;
+}
+
+.population-total {
+  text-align: right;
+}
+
+.population-total strong {
+  color: $text-strong;
+  display: block;
+  font-size: 1.35rem;
+}
+
+.population-total span {
+  font-size: 0.78rem;
+}
+
+.population-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.population-panel {
+  background: rgba(20, 20, 20, 0.45);
+  border-top: 3px solid $primary;
+  padding: 0.75rem;
+}
+
+.population-panel-header {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.population-panel-header h2 {
+  color: $text-strong;
+  flex: 1;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.population-panel-header span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.78rem;
+}
+
+.population-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.population-bars li {
+  align-items: center;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: 20px minmax(110px, 1fr) minmax(0, 2fr) 2.5rem;
+}
+
+.population-bar-name {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.population-bar-track {
+  background: rgba(0, 0, 0, 0.4);
+  height: 10px;
+}
+
+.population-bar-fill {
+  display: block;
+  height: 100%;
+}
+
+.population-bar-fill-order {
+  background: rgb(12, 47, 158);
+}
+
+.population-bar-fill-destruction {
+  background: rgb(158, 12, 13);
+}
+
+.population-bar-count {
+  color: $text-strong;
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.population-table td,
+.population-table th {
+  vertical-align: middle;
+}
+
+@media (max-width: 768px) {
+  .population-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .population-total {
+    text-align: left;
+  }
+
+  .population-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .population-bars li {
+    grid-template-columns: 20px minmax(90px, 1fr) minmax(0, 1.5fr) 2.5rem;
+  }
+}
+
 .scenario-feed-toolbar {
   align-items: center;
   background: rgba(20, 20, 20, 0.45);
