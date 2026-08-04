@@ -2734,7 +2734,7 @@ function print() { __p += __j.call(arguments, '') }
       averageDeaths
     }
   }
-`,fD=({name:e,instanceId:t,encounterId:n})=>{let[r]=Vf(),i=lD(r),{data:a,error:o,loading:s}=V(dD,{variables:{where:{encounterId:{eq:n},instanceId:{eq:t},...i}}});return s||!a?.instanceEncounterRuns?(0,Z.jsxs)(`tr`,{children:[(0,Z.jsx)(`td`,{children:e}),(0,Z.jsx)(`td`,{colSpan:3,children:(0,Z.jsx)(`progress`,{className:`progress`})})]}):o?(0,Z.jsx)(Q,{name:o.name,message:o.message}):a.instanceEncounterRuns.medianDuration===0?null:(0,Z.jsxs)(`tr`,{children:[(0,Z.jsx)(`td`,{children:e}),(0,Z.jsx)(`td`,{children:Zh(pg(a.instanceEncounterRuns.medianDuration))}),(0,Z.jsx)(`td`,{children:a.instanceEncounterRuns.medianDeaths}),(0,Z.jsx)(`td`,{children:Math.round((a.instanceEncounterRuns.averageDeaths+2**-52)*100)/100})]})},pD=B`
+`,fD=({name:e,instanceId:t,encounterId:n})=>{let[r]=Vf(),i=lD(r),{data:a,error:o,loading:s}=V(dD,{variables:{where:{encounterId:{eq:n},instanceId:{eq:t},...i}}});if(s||!a?.instanceEncounterRuns)return(0,Z.jsxs)(`tr`,{children:[(0,Z.jsx)(`td`,{children:e}),(0,Z.jsx)(`td`,{colSpan:3,children:(0,Z.jsx)(`progress`,{className:`progress`})})]});if(o)return(0,Z.jsx)(Q,{name:o.name,message:o.message});let c=pg(a.instanceEncounterRuns.medianDuration);return(c.days??0)*86400+(c.hours??0)*3600+(c.minutes??0)*60+(c.seconds??0)<60?null:(0,Z.jsxs)(`tr`,{children:[(0,Z.jsx)(`td`,{children:e}),(0,Z.jsx)(`td`,{children:Zh(c)}),(0,Z.jsx)(`td`,{children:a.instanceEncounterRuns.medianDeaths}),(0,Z.jsx)(`td`,{children:Math.round((a.instanceEncounterRuns.averageDeaths+2**-52)*100)/100})]})},pD=B`
   query InstanceEncounters($ids: [ID!]) {
     instances(where: { id: { in: $ids } }) {
       nodes {
