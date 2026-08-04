@@ -2451,7 +2451,7 @@ function print() { __p += __j.call(arguments, '') }
       averageDeaths
     }
   }
-`,PE=500,FE=420*60*1e3,IE=B`
+`,PE=50,FE=420*60*1e3,IE=B`
   query GetInstanceRunsDurationSample(
     $first: Int
     $where: InstanceRunFilterInput
