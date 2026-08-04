@@ -227,7 +227,8 @@
     "numHealers": "Healers",
     "all": "All",
     "averageDuration": "Average Duration",
-    "averageDeaths": "Average Deaths"
+    "averageDeaths": "Average Deaths",
+    "averageDurationUnavailable": "Not available (some runs in this instance have invalid duration data)"
   },
   "instanceRun": {
     "title": "#{{id}}",
@@ -324,6 +325,6 @@
     "startDate": "Start",
     "endDate": "End",
     "gatheringRuns": "gathering {{loaded}} of {{total}}",
-    "rangeRunsNote": "{{count}} runs · {{rangeLabel}}"
+    "rangeRunsNote": "{{count}} runs \u00b7 {{rangeLabel}}"
   }
 }
