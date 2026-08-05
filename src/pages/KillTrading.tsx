@@ -331,7 +331,7 @@ export const KillTrading = (): ReactElement => {
 
       <div className="card mb-5">
         <div className="card-content">
-          <div className="columns is-vcentered">
+          <div className="columns is-vcentered is-multiline">
             <div className="column">
               <div className="tabs">
                 <ul>
