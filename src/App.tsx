@@ -33,6 +33,7 @@ import { StorylineEntry } from '@/pages/StorylineEntry';
 import { StorylineActivity } from '@/pages/StorylineActivity';
 import { InstanceStatistics } from '@/pages/InstanceStatistics';
 import { InstanceHub } from '@/pages/InstanceHub';
+import { KillTrading } from '@/pages/KillTrading';
 
 // Extend the Window interface to include gtag
 declare global {
@@ -179,6 +180,7 @@ const App = () => {
         />
 
         <Route path="/ranked-leaderboard" element={<RankedLeaderboard />} />
+        <Route path="/kill-trading" element={<KillTrading />} />
       </Routes>
     </>
   );
