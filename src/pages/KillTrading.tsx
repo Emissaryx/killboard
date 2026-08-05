@@ -536,7 +536,19 @@ export const KillTrading = (): ReactElement => {
                             })}
                             disabled={pendingIds.has(flag.id)}
                             onClick={() =>
-                              updateFlag(flag.id, { banned: !flag.banned })
+                              // Marking something banned means it's been
+                              // looked at and acted on, so it should also
+                              // count as reviewed (and drop out of an
+                              // "unreviewed" filtered view). Un-banning
+                              // doesn't force it back to unreviewed - a
+                              // human might still want it marked reviewed
+                              // even after reversing the ban call.
+                              updateFlag(
+                                flag.id,
+                                flag.banned
+                                  ? { banned: false }
+                                  : { banned: true, reviewed: true },
+                              )
                             }
                           >
                             {flag.banned ? 'Banned' : 'Mark banned'}
