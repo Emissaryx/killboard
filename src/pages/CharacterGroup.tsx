@@ -121,6 +121,14 @@ export const CharacterGroup = (): ReactElement => {
       <div className="columns is-multiline">
         {characterIds.map((id) => (
           <div className="column is-one-third" key={id}>
+            {/* CharacterInfo's own name link intentionally points at the
+                external armory (that's correct on the single-character
+                page it was built for) - on this page we want an internal
+                link back into the site instead, so it's added separately
+                rather than changing the shared component's behavior. */}
+            <Link to={`/character/${id}`} className="is-size-7">
+              View character page
+            </Link>
             <CharacterInfo id={Number(id)} />
           </div>
         ))}
