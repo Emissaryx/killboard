@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
 import clsx from 'clsx';
 import { ErrorMessage } from '@/components/global/ErrorMessage';
+import { SortConfigDirection, useSortableData } from '@/hooks/useSortableData';
 
 // Invisible review dashboard for the kill-trading/farming detector. Not
 // linked from MainNav on purpose (same "you need the direct URL" pattern
@@ -93,6 +94,8 @@ export const KillTrading = (): ReactElement => {
   const [showDismissed, setShowDismissed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
 
@@ -157,6 +160,53 @@ export const KillTrading = (): ReactElement => {
       cancelled = true;
     };
   }, [patternFilter, showDismissed, reloadToken]);
+
+  // Date range filter is applied client-side against each flag's activity
+  // window (windowStart/windowEnd) - a flag matches if its window overlaps
+  // the selected [dateFrom, dateTo] range at all, not just if it started
+  // exactly inside it, so a long-running pattern that merely touches the
+  // selected range still shows up.
+  const dateFilteredFlags = useMemo(() => {
+    if (!flags) {
+      return flags;
+    }
+    if (!dateFrom && !dateTo) {
+      return flags;
+    }
+    const fromMs = dateFrom ? new Date(dateFrom).getTime() : null;
+    // 'to' is a whole day - push it to the end of that day so the day you
+    // pick is fully included.
+    const toMs = dateTo
+      ? new Date(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1
+      : null;
+    return flags.filter((flag) => {
+      const windowStartMs = new Date(flag.windowStart).getTime();
+      const windowEndMs = new Date(flag.windowEnd).getTime();
+      if (fromMs != null && windowEndMs < fromMs) {
+        return false;
+      }
+      if (toMs != null && windowStartMs > toMs) {
+        return false;
+      }
+      return true;
+    });
+  }, [flags, dateFrom, dateTo]);
+
+  const {
+    items: sortedFlags,
+    requestSort,
+    sortConfig,
+  } = useSortableData(dateFilteredFlags ?? [], {
+    direction: SortConfigDirection.descending,
+    key: 'score',
+  });
+
+  const getSortClass = (key: string): string => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return '';
+    }
+    return sortConfig.direction;
+  };
 
   const updateFlag = (
     id: number,
@@ -264,6 +314,45 @@ export const KillTrading = (): ReactElement => {
               </div>
             </div>
             <div className="column is-narrow">
+              <div className="field has-addons">
+                <div className="control">
+                  <input
+                    type="date"
+                    className="input is-small"
+                    value={dateFrom}
+                    max={dateTo || undefined}
+                    onChange={(event) => setDateFrom(event.target.value)}
+                  />
+                </div>
+                <div className="control">
+                  <a className="button is-small is-static">to</a>
+                </div>
+                <div className="control">
+                  <input
+                    type="date"
+                    className="input is-small"
+                    value={dateTo}
+                    min={dateFrom || undefined}
+                    onChange={(event) => setDateTo(event.target.value)}
+                  />
+                </div>
+                {(dateFrom || dateTo) && (
+                  <div className="control">
+                    <button
+                      type="button"
+                      className="button is-small"
+                      onClick={() => {
+                        setDateFrom('');
+                        setDateTo('');
+                      }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="column is-narrow">
               <label className="checkbox">
                 <input
                   type="checkbox"
@@ -279,25 +368,70 @@ export const KillTrading = (): ReactElement => {
             <ErrorMessage name={flagsError.name} message={flagsError.message} />
           )}
           {!flagsError && !flags && <progress className="progress" />}
-          {flags && flags.length === 0 && (
+          {dateFilteredFlags && dateFilteredFlags.length === 0 && (
             <p>No flagged groups for this filter yet.</p>
           )}
-          {flags && flags.length > 0 && (
+          {dateFilteredFlags && dateFilteredFlags.length > 0 && (
             <div className="table-container">
               <table className="table is-fullwidth is-striped">
                 <thead>
                   <tr>
-                    <th>Pattern</th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('pattern'),
+                      )}
+                      onClick={() => requestSort('pattern')}
+                    >
+                      Pattern
+                    </th>
                     <th>Characters</th>
-                    <th>Total kills</th>
-                    <th>Window</th>
-                    <th>Last seen</th>
-                    <th>Score</th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('totalKills'),
+                      )}
+                      onClick={() => requestSort('totalKills')}
+                    >
+                      Total kills
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('windowStart'),
+                      )}
+                      onClick={() => requestSort('windowStart')}
+                    >
+                      Window
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('lastSeen'),
+                      )}
+                      onClick={() => requestSort('lastSeen')}
+                    >
+                      Last seen
+                    </th>
+                    <th
+                      className={clsx(
+                        'is-clickable',
+                        'has-text-link',
+                        getSortClass('score'),
+                      )}
+                      onClick={() => requestSort('score')}
+                    >
+                      Score
+                    </th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {flags.map((flag) => (
+                  {sortedFlags.map((flag) => (
                     <tr key={flag.id}>
                       <td>
                         <span
