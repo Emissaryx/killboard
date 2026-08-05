@@ -91,7 +91,7 @@ export const KillTrading = (): ReactElement => {
 
   const [patternFilter, setPatternFilter] = useState<
     'all' | 'farming' | 'trading'
-  >('all');
+  >('farming');
   const [showDismissed, setShowDismissed] = useState(false);
   const [hideReviewed, setHideReviewed] = useState(true);
   const [hideBanned, setHideBanned] = useState(true);
