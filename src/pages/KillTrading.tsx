@@ -95,6 +95,7 @@ export const KillTrading = (): ReactElement => {
   const [showDismissed, setShowDismissed] = useState(false);
   const [hideReviewed, setHideReviewed] = useState(true);
   const [hideBanned, setHideBanned] = useState(true);
+  const [minScore, setMinScore] = useState(0);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
@@ -164,6 +165,23 @@ export const KillTrading = (): ReactElement => {
     };
   }, [patternFilter, showDismissed, reloadToken]);
 
+  // Highest score currently loaded, used as the slider's ceiling. Falls
+  // back to a small default so the slider isn't 0-0 before flags load.
+  const maxScore = useMemo(() => {
+    if (!flags || flags.length === 0) {
+      return 10;
+    }
+    return Math.max(...flags.map((flag) => flag.score));
+  }, [flags]);
+
+  // If a pattern/date filter narrows the loaded set enough that the max
+  // score drops below the currently selected threshold, pull the
+  // threshold back down too rather than leaving it stuck above every
+  // visible row (which would silently show zero results).
+  useEffect(() => {
+    setMinScore((current) => (current > maxScore ? maxScore : current));
+  }, [maxScore]);
+
   // Date range filter is applied client-side against each flag's activity
   // window (windowStart/windowEnd) - a flag matches if its window overlaps
   // the selected [dateFrom, dateTo] range at all, not just if it started
@@ -186,6 +204,9 @@ export const KillTrading = (): ReactElement => {
       if (hideBanned && flag.banned) {
         return false;
       }
+      if (flag.score < minScore) {
+        return false;
+      }
       const windowStartMs = new Date(flag.windowStart).getTime();
       const windowEndMs = new Date(flag.windowEnd).getTime();
       if (fromMs != null && windowEndMs < fromMs) {
@@ -196,7 +217,7 @@ export const KillTrading = (): ReactElement => {
       }
       return true;
     });
-  }, [flags, dateFrom, dateTo, hideReviewed, hideBanned]);
+  }, [flags, dateFrom, dateTo, hideReviewed, hideBanned, minScore]);
 
   const {
     items: sortedFlags,
@@ -370,6 +391,20 @@ export const KillTrading = (): ReactElement => {
                   </div>
                 )}
               </div>
+            </div>
+            <div className="column is-narrow">
+              <label className="label is-small mb-1" htmlFor="min-score-slider">
+                Min score: {minScore.toFixed(1)}
+              </label>
+              <input
+                id="min-score-slider"
+                type="range"
+                min={0}
+                max={Math.max(1, Math.ceil(maxScore))}
+                step={0.5}
+                value={minScore}
+                onChange={(event) => setMinScore(Number(event.target.value))}
+              />
             </div>
             <div className="column is-narrow">
               <label className="checkbox">
