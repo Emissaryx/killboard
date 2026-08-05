@@ -1,6 +1,7 @@
 import { gql } from '@apollo/client';
 import { useQuery } from '@apollo/client/react';
 import { getUnixTime, startOfWeek } from 'date-fns';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
 import type { Query } from '@/__generated__/graphql';
@@ -25,7 +26,18 @@ const CHARACTER_INFO = gql`
   }
 `;
 
-export const CharacterInfo = ({ id }: { id: number }): ReactElement => {
+export const CharacterInfo = ({
+  id,
+  onLoaded,
+}: {
+  id: number;
+  // Optional - lets a caller that renders several CharacterInfo cards at
+  // once (e.g. CharacterGroup) pick up each character's name as it loads,
+  // without this component needing to know why the name is wanted or
+  // duplicating its own query elsewhere. No-op for every other existing
+  // call site since it's optional.
+  onLoaded?: (character: { id: number; name: string }) => void;
+}): ReactElement => {
   const { t } = useTranslation(['common', 'components', 'enums']);
   const { loading, error, data } = useQuery<Query>(CHARACTER_INFO, {
     variables: {
@@ -33,6 +45,16 @@ export const CharacterInfo = ({ id }: { id: number }): ReactElement => {
       startOfWeek: getUnixTime(startOfWeek(new Date(), { weekStartsOn: 1 })),
     },
   });
+
+  useEffect(() => {
+    if (data?.character?.name != null) {
+      onLoaded?.({ id, name: data.character.name });
+    }
+    // onLoaded is intentionally not a dependency - callers typically pass
+    // an inline arrow function, and including it would re-fire this
+    // effect (and the parent state update it causes) every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, data?.character?.name]);
 
   if (loading) {
     return <progress className="progress" />;

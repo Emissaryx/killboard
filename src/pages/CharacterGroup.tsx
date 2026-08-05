@@ -1,5 +1,5 @@
 import { gql } from '@apollo/client';
-import { useTranslation } from 'react-i18next';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router';
 import type { ReactElement } from 'react';
 import { CharacterInfo } from '@/components/character/CharacterInfo';
@@ -87,7 +87,6 @@ const GROUP_KILLS = gql`
 `;
 
 export const CharacterGroup = (): ReactElement => {
-  const { t } = useTranslation(['common']);
   const { ids } = useParams();
 
   const characterIds = (ids ?? '')
@@ -95,13 +94,30 @@ export const CharacterGroup = (): ReactElement => {
     .map((id) => id.trim())
     .filter((id) => id.length > 0);
 
+  // Picked up from each CharacterInfo card as it loads (see the onLoaded
+  // callback below) so the feud links can show names instead of bare
+  // IDs. The feud page itself only needs the IDs (they're right there in
+  // the URL - /character/:id1/feud/:id2), so a name that hasn't loaded
+  // yet just means the link falls back to showing the ID.
+  const [characterNames, setCharacterNames] = useState<Record<string, string>>(
+    {},
+  );
+
+  // Every unique pair in the group - for a 2-character trading flag
+  // that's just the one pair; for a larger farming clique it's every
+  // combination, since the feud page itself only ever compares two
+  // characters at a time.
+  const pairs: [string, string][] = [];
+  for (let i = 0; i < characterIds.length; i++) {
+    for (let j = i + 1; j < characterIds.length; j++) {
+      pairs.push([characterIds[i], characterIds[j]]);
+    }
+  }
+
   return (
     <div className="container is-max-widescreen mt-2">
       <nav className="breadcrumb" aria-label="breadcrumbs">
         <ul>
-          <li>
-            <Link to="/">{t('common:home')}</Link>
-          </li>
           <li>
             <Link to="/kill-trading">Kill trading review</Link>
           </li>
@@ -129,10 +145,39 @@ export const CharacterGroup = (): ReactElement => {
             <Link to={`/character/${id}`} className="is-size-7">
               View character page
             </Link>
-            <CharacterInfo id={Number(id)} />
+            <CharacterInfo
+              id={Number(id)}
+              onLoaded={(character) =>
+                setCharacterNames((prev) => ({
+                  ...prev,
+                  [String(character.id)]: character.name,
+                }))
+              }
+            />
           </div>
         ))}
       </div>
+
+      {pairs.length > 0 && (
+        <div className="box mb-5">
+          <p className="has-text-weight-semibold mb-2">
+            {pairs.length === 1
+              ? 'Feud between these two characters'
+              : 'Feuds between each pair in this group'}
+          </p>
+          <div className="tags">
+            {pairs.map(([id1, id2]) => (
+              <Link
+                key={`${id1}-${id2}`}
+                to={`/character/${id1}/feud/${id2}`}
+                className="tag is-link is-light"
+              >
+                {characterNames[id1] ?? id1} vs {characterNames[id2] ?? id2}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       <KillsFilters />
       <KillsList
