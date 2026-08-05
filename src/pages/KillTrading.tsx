@@ -95,7 +95,7 @@ export const KillTrading = (): ReactElement => {
   const [showDismissed, setShowDismissed] = useState(false);
   const [hideReviewed, setHideReviewed] = useState(true);
   const [hideBanned, setHideBanned] = useState(true);
-  const [minScore, setMinScore] = useState(0);
+  const [minScore, setMinScore] = useState(50);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
@@ -165,11 +165,12 @@ export const KillTrading = (): ReactElement => {
     };
   }, [patternFilter, showDismissed, reloadToken]);
 
-  // Highest score currently loaded, used as the slider's ceiling. Falls
-  // back to a small default so the slider isn't 0-0 before flags load.
+  // Highest score currently loaded, used as the slider's ceiling. Null
+  // until flags actually load, so the default threshold below isn't
+  // clamped down before real data arrives.
   const maxScore = useMemo(() => {
     if (!flags || flags.length === 0) {
-      return 10;
+      return null;
     }
     return Math.max(...flags.map((flag) => flag.score));
   }, [flags]);
@@ -179,6 +180,9 @@ export const KillTrading = (): ReactElement => {
   // threshold back down too rather than leaving it stuck above every
   // visible row (which would silently show zero results).
   useEffect(() => {
+    if (maxScore == null) {
+      return;
+    }
     setMinScore((current) => (current > maxScore ? maxScore : current));
   }, [maxScore]);
 
@@ -400,7 +404,7 @@ export const KillTrading = (): ReactElement => {
                 id="min-score-slider"
                 type="range"
                 min={0}
-                max={Math.max(1, Math.ceil(maxScore))}
+                max={Math.max(1, Math.ceil(maxScore ?? minScore))}
                 step={0.5}
                 value={minScore}
                 onChange={(event) => setMinScore(Number(event.target.value))}
