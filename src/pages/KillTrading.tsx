@@ -331,32 +331,24 @@ export const KillTrading = (): ReactElement => {
 
       <div className="card mb-5">
         <div className="card-content">
+          <div className="tabs">
+            <ul>
+              <li className={clsx({ 'is-active': patternFilter === 'all' })}>
+                <a onClick={() => setPatternFilter('all')}>All patterns</a>
+              </li>
+              <li
+                className={clsx({ 'is-active': patternFilter === 'farming' })}
+              >
+                <a onClick={() => setPatternFilter('farming')}>Farming</a>
+              </li>
+              <li
+                className={clsx({ 'is-active': patternFilter === 'trading' })}
+              >
+                <a onClick={() => setPatternFilter('trading')}>Trading</a>
+              </li>
+            </ul>
+          </div>
           <div className="columns is-vcentered is-multiline">
-            <div className="column">
-              <div className="tabs">
-                <ul>
-                  <li
-                    className={clsx({ 'is-active': patternFilter === 'all' })}
-                  >
-                    <a onClick={() => setPatternFilter('all')}>All patterns</a>
-                  </li>
-                  <li
-                    className={clsx({
-                      'is-active': patternFilter === 'farming',
-                    })}
-                  >
-                    <a onClick={() => setPatternFilter('farming')}>Farming</a>
-                  </li>
-                  <li
-                    className={clsx({
-                      'is-active': patternFilter === 'trading',
-                    })}
-                  >
-                    <a onClick={() => setPatternFilter('trading')}>Trading</a>
-                  </li>
-                </ul>
-              </div>
-            </div>
             <div className="column is-narrow">
               <div className="field has-addons">
                 <div className="control">
