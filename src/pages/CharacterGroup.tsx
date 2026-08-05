@@ -7,12 +7,14 @@ import { KillsFilters } from '@/components/kill/KillsFilters';
 import { KillsList } from '@/components/kill/KillsList';
 
 // Companion page to /kill-trading: given a flagged group's character IDs
-// (comma-joined in the URL), shows the combined kill feed across all of
-// them - every kill where any of these characters was killer OR victim,
-// interleaved chronologically, so a reviewer can see the actual
-// back-and-forth (or one-sided farming) pattern in context instead of
-// piecing it together from separate single-character pages. Reached only
-// via a link from /kill-trading's rows - not linked from MainNav, same
+// (comma-joined in the URL), shows the kill feed *within* that group -
+// kills where both the killer and the victim are members of the flagged
+// set, interleaved chronologically. Deliberately narrower than "every
+// kill involving any of them": a flagged character's ordinary fights
+// against people outside the group are noise for this purpose, and
+// burying the actual trading/farming pattern in that noise defeats the
+// point of a review page built for spotting it quickly. Reached only via
+// a link from /kill-trading's rows - not linked from MainNav, same
 // "direct URL only" pattern as /kill-trading and /ranked-leaderboard.
 const GROUP_KILLS = gql`
   query GetCharacterGroupKills(
@@ -26,10 +28,8 @@ const GROUP_KILLS = gql`
   ) {
     kills(
       where: {
-        or: [
-          { killerCharacterId: { in: $ids } }
-          { victimCharacterId: { in: $ids } }
-        ]
+        killerCharacterId: { in: $ids }
+        victimCharacterId: { in: $ids }
         time: $time
       }
       first: $first
@@ -129,9 +129,10 @@ export const CharacterGroup = (): ReactElement => {
 
       <p className="subtitle is-6">
         Not linked anywhere in the site nav - reached from the kill-trading
-        review page. Combined kill feed for {characterIds.length} character
-        {characterIds.length === 1 ? '' : 's'}: every kill where any of them was
-        the killer or the victim, in one timeline.
+        review page. Kill feed for {characterIds.length} character
+        {characterIds.length === 1 ? '' : 's'}: only kills where both the killer
+        and the victim are members of this group, in one timeline - the actual
+        feud, not their ordinary fights against everyone else.
       </p>
 
       <div className="columns is-multiline">
@@ -200,7 +201,7 @@ export const CharacterGroup = (): ReactElement => {
         query={GROUP_KILLS}
         queryOptions={{ variables: { ids: characterIds, time: {} } }}
         perPage={25}
-        title="Combined kills"
+        title="Feud kills (within this group)"
       />
     </div>
   );
