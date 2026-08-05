@@ -374,7 +374,7 @@ export const KillTrading = (): ReactElement => {
           {dateFilteredFlags && dateFilteredFlags.length > 0 && (
             <div className="table-container">
               <table className="table is-fullwidth is-striped">
-                <thead>
+                <thead className="is-relative">
                   <tr>
                     <th
                       className={clsx(
