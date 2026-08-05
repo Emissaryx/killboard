@@ -45,6 +45,7 @@ interface KillFlag {
   lastSeen: string;
   reviewed: boolean;
   dismissed: boolean;
+  banned: boolean;
 }
 
 interface BackfillStatus {
@@ -92,7 +93,8 @@ export const KillTrading = (): ReactElement => {
     'all' | 'farming' | 'trading'
   >('all');
   const [showDismissed, setShowDismissed] = useState(false);
-  const [hideReviewed, setHideReviewed] = useState(false);
+  const [hideReviewed, setHideReviewed] = useState(true);
+  const [hideBanned, setHideBanned] = useState(true);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
@@ -181,6 +183,9 @@ export const KillTrading = (): ReactElement => {
       if (hideReviewed && flag.reviewed) {
         return false;
       }
+      if (hideBanned && flag.banned) {
+        return false;
+      }
       const windowStartMs = new Date(flag.windowStart).getTime();
       const windowEndMs = new Date(flag.windowEnd).getTime();
       if (fromMs != null && windowEndMs < fromMs) {
@@ -191,7 +196,7 @@ export const KillTrading = (): ReactElement => {
       }
       return true;
     });
-  }, [flags, dateFrom, dateTo, hideReviewed]);
+  }, [flags, dateFrom, dateTo, hideReviewed, hideBanned]);
 
   const {
     items: sortedFlags,
@@ -211,7 +216,7 @@ export const KillTrading = (): ReactElement => {
 
   const updateFlag = (
     id: number,
-    patch: { reviewed?: boolean; dismissed?: boolean },
+    patch: { reviewed?: boolean; dismissed?: boolean; banned?: boolean },
   ) => {
     setPendingIds((prev) => new Set(prev).add(id));
     fetch(`${CATALOG_BASE_URL}/kill-flags/${id}`, {
@@ -241,6 +246,19 @@ export const KillTrading = (): ReactElement => {
         Not linked anywhere in the site nav - this page only exists at this URL.
         Flags below are automated pattern matches, not proof of cheating; use
         judgment before acting on them.
+      </p>
+      <p className="is-size-7 has-text-grey mb-5">
+        <strong>How Score is calculated:</strong> for{' '}
+        <span className="tag is-warning is-light">farming</span> flags, score =
+        repeat ratio (total kills &divide; distinct victims) &times;
+        log&#8322;(total kills + 1) - a killer racking up a lot of kills on a
+        small, repeated pool of victims scores higher, with diminishing returns
+        from raw kill count alone so a long, ordinary farming session on a big
+        roster doesn&apos;t outscore a tight, suspicious pattern. For{' '}
+        <span className="tag is-danger is-light">trading</span> flags, score =
+        total kills in the clique &times; number of characters in the clique -
+        more reciprocal kills among more characters scores higher. Score is
+        meant to help you triage what to look at first, not as a verdict.
       </p>
 
       <div className="card mb-5">
@@ -361,6 +379,16 @@ export const KillTrading = (): ReactElement => {
                   onChange={(event) => setHideReviewed(event.target.checked)}
                 />{' '}
                 Hide reviewed
+              </label>
+            </div>
+            <div className="column is-narrow">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={hideBanned}
+                  onChange={(event) => setHideBanned(event.target.checked)}
+                />{' '}
+                Hide banned
               </label>
             </div>
             <div className="column is-narrow">
@@ -500,6 +528,18 @@ export const KillTrading = (): ReactElement => {
                             }
                           >
                             {flag.reviewed ? 'Reviewed' : 'Mark reviewed'}
+                          </button>
+                          <button
+                            type="button"
+                            className={clsx('button', {
+                              'is-dark': flag.banned,
+                            })}
+                            disabled={pendingIds.has(flag.id)}
+                            onClick={() =>
+                              updateFlag(flag.id, { banned: !flag.banned })
+                            }
+                          >
+                            {flag.banned ? 'Banned' : 'Mark banned'}
                           </button>
                           <button
                             type="button"
