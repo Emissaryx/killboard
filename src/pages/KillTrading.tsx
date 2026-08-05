@@ -28,6 +28,7 @@ interface KillFlagDetails {
   distinctVictims?: number;
   repeatRatio?: number;
   medianGapMinutes?: number | null;
+  rrGapKillCount?: number;
   sampleEvents?: KillFlagSampleEvent[];
 }
 
@@ -372,8 +373,14 @@ export const KillTrading = (): ReactElement => {
         roster doesn&apos;t outscore a tight, suspicious pattern. For{' '}
         <span className="tag is-danger is-light">trading</span> flags, score =
         total kills in the clique &times; number of characters in the clique -
-        more reciprocal kills among more characters scores higher. Score is
-        meant to help you triage what to look at first, not as a verdict.
+        more reciprocal kills among more characters scores higher. Either
+        pattern also gets a flat{' '}
+        <span className="tag is-black is-light">+100</span> bonus if any kill in
+        the group had a killer at least 40 RR below the victim, or a sub-40-RR
+        killer against an RR40+ victim - a low-RR character repeatedly dropping
+        much higher-RR victims is a strong twink/boost signal on its own,
+        regardless of how the rest of the pattern scores. Score is meant to help
+        you triage what to look at first, not as a verdict.
       </p>
 
       <div className="card mb-5">
@@ -673,6 +680,14 @@ export const KillTrading = (): ReactElement => {
                                 ratio
                               </div>
                             )}
+                          {(flag.details.rrGapKillCount ?? 0) > 0 && (
+                            <span
+                              className="tag is-black is-light is-size-7 mt-1"
+                              title="At least one kill in this group had a low-RR killer against a much higher-RR victim - adds a flat +100 to score"
+                            >
+                              low RR vs high RR ({flag.details.rrGapKillCount})
+                            </span>
+                          )}
                         </td>
                         <td>{flag.totalKills}</td>
                         <td className="is-size-7">
