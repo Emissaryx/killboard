@@ -70,7 +70,7 @@ export const CharacterRecentDeaths = ({ id }: { id: number }): ReactElement => {
         variables: { id, time: {} },
       }}
       perPage={10}
-      showTime={false}
+      showTime
       showVictim={false}
     />
   );

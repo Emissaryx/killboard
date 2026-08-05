@@ -73,7 +73,7 @@ export const CharacterRecentKills = ({ id }: { id: number }): ReactElement => {
         variables: { id, time: {} },
       }}
       perPage={10}
-      showTime={false}
+      showTime
       showKiller={false}
     />
   );
