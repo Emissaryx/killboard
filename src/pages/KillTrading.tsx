@@ -92,6 +92,7 @@ export const KillTrading = (): ReactElement => {
     'all' | 'farming' | 'trading'
   >('all');
   const [showDismissed, setShowDismissed] = useState(false);
+  const [hideReviewed, setHideReviewed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
@@ -166,11 +167,8 @@ export const KillTrading = (): ReactElement => {
   // the selected [dateFrom, dateTo] range at all, not just if it started
   // exactly inside it, so a long-running pattern that merely touches the
   // selected range still shows up.
-  const dateFilteredFlags = useMemo(() => {
+  const filteredFlags = useMemo(() => {
     if (!flags) {
-      return flags;
-    }
-    if (!dateFrom && !dateTo) {
       return flags;
     }
     const fromMs = dateFrom ? new Date(dateFrom).getTime() : null;
@@ -180,6 +178,9 @@ export const KillTrading = (): ReactElement => {
       ? new Date(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1
       : null;
     return flags.filter((flag) => {
+      if (hideReviewed && flag.reviewed) {
+        return false;
+      }
       const windowStartMs = new Date(flag.windowStart).getTime();
       const windowEndMs = new Date(flag.windowEnd).getTime();
       if (fromMs != null && windowEndMs < fromMs) {
@@ -190,13 +191,13 @@ export const KillTrading = (): ReactElement => {
       }
       return true;
     });
-  }, [flags, dateFrom, dateTo]);
+  }, [flags, dateFrom, dateTo, hideReviewed]);
 
   const {
     items: sortedFlags,
     requestSort,
     sortConfig,
-  } = useSortableData(dateFilteredFlags ?? [], {
+  } = useSortableData(filteredFlags ?? [], {
     direction: SortConfigDirection.descending,
     key: 'score',
   });
@@ -356,6 +357,16 @@ export const KillTrading = (): ReactElement => {
               <label className="checkbox">
                 <input
                   type="checkbox"
+                  checked={hideReviewed}
+                  onChange={(event) => setHideReviewed(event.target.checked)}
+                />{' '}
+                Hide reviewed
+              </label>
+            </div>
+            <div className="column is-narrow">
+              <label className="checkbox">
+                <input
+                  type="checkbox"
                   checked={showDismissed}
                   onChange={(event) => setShowDismissed(event.target.checked)}
                 />{' '}
@@ -368,10 +379,10 @@ export const KillTrading = (): ReactElement => {
             <ErrorMessage name={flagsError.name} message={flagsError.message} />
           )}
           {!flagsError && !flags && <progress className="progress" />}
-          {dateFilteredFlags && dateFilteredFlags.length === 0 && (
+          {filteredFlags && filteredFlags.length === 0 && (
             <p>No flagged groups for this filter yet.</p>
           )}
-          {dateFilteredFlags && dateFilteredFlags.length > 0 && (
+          {filteredFlags && filteredFlags.length > 0 && (
             <div className="table-container">
               <table className="table is-fullwidth is-striped">
                 <thead className="is-relative">
