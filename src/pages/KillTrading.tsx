@@ -318,6 +318,13 @@ export const KillTrading = (): ReactElement => {
                             </Link>
                           </span>
                         ))}
+                        <div className="is-size-7">
+                          <Link
+                            to={`/character-group/${flag.characterIds.join(',')}`}
+                          >
+                            View combined kill feed
+                          </Link>
+                        </div>
                         {flag.pattern === 'farming' &&
                           flag.details.distinctVictims != null && (
                             <div className="is-size-7 has-text-grey">
