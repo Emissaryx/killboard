@@ -165,15 +165,31 @@ export const CharacterGroup = (): ReactElement => {
               ? 'Feud between these two characters'
               : 'Feuds between each pair in this group'}
           </p>
+          {/* TEMP: the second (live site) link per pair is a stopgap so
+              GMs have something clickable today, since this preview
+              deploy's own /character/:id1/feud/:id2 route isn't the one
+              they'd normally use. REMOVE this second link (and this
+              comment) once this page actually ships to Dalen - the
+              internal link above it is the real, permanent one. */}
           <div className="tags">
             {pairs.map(([id1, id2]) => (
-              <Link
-                key={`${id1}-${id2}`}
-                to={`/character/${id1}/feud/${id2}`}
-                className="tag is-link is-light"
-              >
-                {characterNames[id1] ?? id1} vs {characterNames[id2] ?? id2}
-              </Link>
+              <span key={`${id1}-${id2}`} className="tags has-addons mr-2 mb-2">
+                <Link
+                  to={`/character/${id1}/feud/${id2}`}
+                  className="tag is-link is-light"
+                >
+                  {characterNames[id1] ?? id1} vs {characterNames[id2] ?? id2}
+                </Link>
+                <a
+                  href={`https://killboard.returnofreckoning.com/character/${id1}/feud/${id2}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="tag is-warning is-light"
+                  title="Temporary: live killboard.returnofreckoning.com feud page - remove before shipping to Dalen"
+                >
+                  live site
+                </a>
+              </span>
             ))}
           </div>
         </div>
