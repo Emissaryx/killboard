@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import { Link } from 'react-router';
 import clsx from 'clsx';
@@ -98,6 +98,10 @@ export const KillTrading = (): ReactElement => {
   const [minScore, setMinScore] = useState(50);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
+  // Rows checked for a bulk action (e.g. "mark reviewed" across a batch
+  // of obviously-legit trading fights at once, instead of clicking each
+  // row's button one at a time).
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -263,6 +267,92 @@ export const KillTrading = (): ReactElement => {
         });
       });
   };
+
+  // Applies one patch to every currently-selected row in parallel, then
+  // reloads once and clears the selection - used by the bulk action bar
+  // so reviewing a big batch of obviously-legit trading pairs doesn't
+  // mean clicking "Mark reviewed" one row at a time.
+  const bulkUpdateFlags = (patch: {
+    reviewed?: boolean;
+    dismissed?: boolean;
+    banned?: boolean;
+  }) => {
+    const ids = [...selectedIds];
+    if (ids.length === 0) {
+      return;
+    }
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+    Promise.allSettled(
+      ids.map((id) =>
+        fetch(`${CATALOG_BASE_URL}/kill-flags/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        }),
+      ),
+    )
+      .then((results) => {
+        const failures = results.filter((r) => r.status === 'rejected');
+        if (failures.length > 0) {
+          console.error('Failed to bulk-update kill flags', failures);
+        }
+      })
+      .finally(() => {
+        setPendingIds((prev) => {
+          const next = new Set(prev);
+          ids.forEach((id) => next.delete(id));
+          return next;
+        });
+        setSelectedIds(new Set());
+        reload();
+      });
+  };
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const allVisibleSelected =
+    sortedFlags.length > 0 &&
+    sortedFlags.every((flag) => selectedIds.has(flag.id));
+  const someVisibleSelected = sortedFlags.some((flag) =>
+    selectedIds.has(flag.id),
+  );
+
+  const toggleSelectAllVisible = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        sortedFlags.forEach((flag) => next.delete(flag.id));
+      } else {
+        sortedFlags.forEach((flag) => next.add(flag.id));
+      }
+      return next;
+    });
+  };
+
+  // Bulma checkboxes don't expose an "indeterminate" prop, and the DOM
+  // property can only be set imperatively - so a ref + effect is needed
+  // to show the "some but not all visible rows selected" dash state.
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate =
+        someVisibleSelected && !allVisibleSelected;
+    }
+  }, [someVisibleSelected, allVisibleSelected]);
 
   return (
     <div className="container is-max-widescreen mt-2">
@@ -442,170 +532,221 @@ export const KillTrading = (): ReactElement => {
             <p>No flagged groups for this filter yet.</p>
           )}
           {filteredFlags && filteredFlags.length > 0 && (
-            <div className="table-container">
-              <table className="table is-fullwidth is-striped">
-                <thead className="is-relative">
-                  <tr>
-                    <th
-                      className={clsx(
-                        'is-clickable',
-                        'has-text-link',
-                        getSortClass('pattern'),
-                      )}
-                      onClick={() => requestSort('pattern')}
+            <>
+              {selectedIds.size > 0 && (
+                <div className="notification is-info is-light py-2 px-3 mb-3 is-flex is-align-items-center">
+                  <span className="mr-3">{selectedIds.size} selected</span>
+                  <div className="buttons are-small mb-0">
+                    <button
+                      type="button"
+                      className="button is-success"
+                      onClick={() => bulkUpdateFlags({ reviewed: true })}
                     >
-                      Pattern
-                    </th>
-                    <th>Characters</th>
-                    <th
-                      className={clsx(
-                        'is-clickable',
-                        'has-text-link',
-                        getSortClass('totalKills'),
-                      )}
-                      onClick={() => requestSort('totalKills')}
+                      Mark reviewed
+                    </button>
+                    <button
+                      type="button"
+                      className="button is-danger"
+                      onClick={() => bulkUpdateFlags({ dismissed: true })}
                     >
-                      Total kills
-                    </th>
-                    <th
-                      className={clsx(
-                        'is-clickable',
-                        'has-text-link',
-                        getSortClass('windowStart'),
-                      )}
-                      onClick={() => requestSort('windowStart')}
+                      Dismiss
+                    </button>
+                    <button
+                      type="button"
+                      className="button is-light"
+                      onClick={() => setSelectedIds(new Set())}
                     >
-                      Window
-                    </th>
-                    <th
-                      className={clsx(
-                        'is-clickable',
-                        'has-text-link',
-                        getSortClass('lastSeen'),
-                      )}
-                      onClick={() => requestSort('lastSeen')}
-                    >
-                      Last seen
-                    </th>
-                    <th
-                      className={clsx(
-                        'is-clickable',
-                        'has-text-link',
-                        getSortClass('score'),
-                      )}
-                      onClick={() => requestSort('score')}
-                    >
-                      Score
-                    </th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedFlags.map((flag) => (
-                    <tr key={flag.id}>
-                      <td>
-                        <span
-                          className={clsx('tag', {
-                            'is-warning': flag.pattern === 'farming',
-                            'is-danger': flag.pattern === 'trading',
-                          })}
-                        >
-                          {flag.pattern}
-                        </span>
-                      </td>
-                      <td>
-                        {flag.characterIds.map((id, index) => (
-                          <span key={id}>
-                            {index > 0 && ', '}
-                            <Link to={`/character/${id}`}>
-                              {flag.characterNames[id] ?? id}
-                            </Link>
-                          </span>
-                        ))}
-                        <div className="is-size-7">
-                          <Link
-                            to={`/character-group/${flag.characterIds.join(',')}`}
-                          >
-                            View combined kill feed
-                          </Link>
-                        </div>
-                        {flag.pattern === 'farming' &&
-                          flag.details.distinctVictims != null && (
-                            <div className="is-size-7 has-text-grey">
-                              {flag.details.distinctVictims} distinct victims, ~
-                              {flag.details.repeatRatio?.toFixed(1)}x repeat
-                              ratio
-                            </div>
-                          )}
-                      </td>
-                      <td>{flag.totalKills}</td>
-                      <td className="is-size-7">
-                        {formatDate(flag.windowStart)}
-                        <br />
-                        to {formatDate(flag.windowEnd)}
-                      </td>
-                      <td className="is-size-7">{formatDate(flag.lastSeen)}</td>
-                      <td>{flag.score.toFixed(1)}</td>
-                      <td>
-                        <div className="buttons are-small">
-                          <button
-                            type="button"
-                            className={clsx('button', {
-                              'is-success': flag.reviewed,
-                            })}
-                            disabled={pendingIds.has(flag.id)}
-                            onClick={() =>
-                              updateFlag(flag.id, { reviewed: !flag.reviewed })
-                            }
-                          >
-                            {flag.reviewed ? 'Reviewed' : 'Mark reviewed'}
-                          </button>
-                          <button
-                            type="button"
-                            className={clsx('button', {
-                              'is-dark': flag.banned,
-                            })}
-                            disabled={pendingIds.has(flag.id)}
-                            onClick={() =>
-                              // Marking something banned means it's been
-                              // looked at and acted on, so it should also
-                              // count as reviewed (and drop out of an
-                              // "unreviewed" filtered view). Un-banning
-                              // doesn't force it back to unreviewed - a
-                              // human might still want it marked reviewed
-                              // even after reversing the ban call.
-                              updateFlag(
-                                flag.id,
-                                flag.banned
-                                  ? { banned: false }
-                                  : { banned: true, reviewed: true },
-                              )
-                            }
-                          >
-                            {flag.banned ? 'Banned' : 'Mark banned'}
-                          </button>
-                          <button
-                            type="button"
-                            className={clsx('button', {
-                              'is-danger': !flag.dismissed,
-                              'is-light': flag.dismissed,
-                            })}
-                            disabled={pendingIds.has(flag.id)}
-                            onClick={() =>
-                              updateFlag(flag.id, {
-                                dismissed: !flag.dismissed,
-                              })
-                            }
-                          >
-                            {flag.dismissed ? 'Restore' : 'Dismiss'}
-                          </button>
-                        </div>
-                      </td>
+                      Clear selection
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="table-container">
+                <table className="table is-fullwidth is-striped">
+                  <thead className="is-relative">
+                    <tr>
+                      <th>
+                        <input
+                          ref={selectAllRef}
+                          type="checkbox"
+                          checked={allVisibleSelected}
+                          onChange={toggleSelectAllVisible}
+                          aria-label="Select all visible rows"
+                        />
+                      </th>
+                      <th
+                        className={clsx(
+                          'is-clickable',
+                          'has-text-link',
+                          getSortClass('pattern'),
+                        )}
+                        onClick={() => requestSort('pattern')}
+                      >
+                        Pattern
+                      </th>
+                      <th>Characters</th>
+                      <th
+                        className={clsx(
+                          'is-clickable',
+                          'has-text-link',
+                          getSortClass('totalKills'),
+                        )}
+                        onClick={() => requestSort('totalKills')}
+                      >
+                        Total kills
+                      </th>
+                      <th
+                        className={clsx(
+                          'is-clickable',
+                          'has-text-link',
+                          getSortClass('windowStart'),
+                        )}
+                        onClick={() => requestSort('windowStart')}
+                      >
+                        Window
+                      </th>
+                      <th
+                        className={clsx(
+                          'is-clickable',
+                          'has-text-link',
+                          getSortClass('lastSeen'),
+                        )}
+                        onClick={() => requestSort('lastSeen')}
+                      >
+                        Last seen
+                      </th>
+                      <th
+                        className={clsx(
+                          'is-clickable',
+                          'has-text-link',
+                          getSortClass('score'),
+                        )}
+                        onClick={() => requestSort('score')}
+                      >
+                        Score
+                      </th>
+                      <th>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {sortedFlags.map((flag) => (
+                      <tr key={flag.id}>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(flag.id)}
+                            onChange={() => toggleSelected(flag.id)}
+                            aria-label={`Select flag ${flag.id}`}
+                          />
+                        </td>
+                        <td>
+                          <span
+                            className={clsx('tag', {
+                              'is-warning': flag.pattern === 'farming',
+                              'is-danger': flag.pattern === 'trading',
+                            })}
+                          >
+                            {flag.pattern}
+                          </span>
+                        </td>
+                        <td>
+                          {flag.characterIds.map((id, index) => (
+                            <span key={id}>
+                              {index > 0 && ', '}
+                              <Link to={`/character/${id}`}>
+                                {flag.characterNames[id] ?? id}
+                              </Link>
+                            </span>
+                          ))}
+                          <div className="is-size-7">
+                            <Link
+                              to={`/character-group/${flag.characterIds.join(',')}`}
+                            >
+                              View combined kill feed
+                            </Link>
+                          </div>
+                          {flag.pattern === 'farming' &&
+                            flag.details.distinctVictims != null && (
+                              <div className="is-size-7 has-text-grey">
+                                {flag.details.distinctVictims} distinct victims,
+                                ~{flag.details.repeatRatio?.toFixed(1)}x repeat
+                                ratio
+                              </div>
+                            )}
+                        </td>
+                        <td>{flag.totalKills}</td>
+                        <td className="is-size-7">
+                          {formatDate(flag.windowStart)}
+                          <br />
+                          to {formatDate(flag.windowEnd)}
+                        </td>
+                        <td className="is-size-7">
+                          {formatDate(flag.lastSeen)}
+                        </td>
+                        <td>{flag.score.toFixed(1)}</td>
+                        <td>
+                          <div className="buttons are-small">
+                            <button
+                              type="button"
+                              className={clsx('button', {
+                                'is-success': flag.reviewed,
+                              })}
+                              disabled={pendingIds.has(flag.id)}
+                              onClick={() =>
+                                updateFlag(flag.id, {
+                                  reviewed: !flag.reviewed,
+                                })
+                              }
+                            >
+                              {flag.reviewed ? 'Reviewed' : 'Mark reviewed'}
+                            </button>
+                            <button
+                              type="button"
+                              className={clsx('button', {
+                                'is-dark': flag.banned,
+                              })}
+                              disabled={pendingIds.has(flag.id)}
+                              onClick={() =>
+                                // Marking something banned means it's been
+                                // looked at and acted on, so it should also
+                                // count as reviewed (and drop out of an
+                                // "unreviewed" filtered view). Un-banning
+                                // doesn't force it back to unreviewed - a
+                                // human might still want it marked reviewed
+                                // even after reversing the ban call.
+                                updateFlag(
+                                  flag.id,
+                                  flag.banned
+                                    ? { banned: false }
+                                    : { banned: true, reviewed: true },
+                                )
+                              }
+                            >
+                              {flag.banned ? 'Banned' : 'Mark banned'}
+                            </button>
+                            <button
+                              type="button"
+                              className={clsx('button', {
+                                'is-danger': !flag.dismissed,
+                                'is-light': flag.dismissed,
+                              })}
+                              disabled={pendingIds.has(flag.id)}
+                              onClick={() =>
+                                updateFlag(flag.id, {
+                                  dismissed: !flag.dismissed,
+                                })
+                              }
+                            >
+                              {flag.dismissed ? 'Restore' : 'Dismiss'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
       </div>
