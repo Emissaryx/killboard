@@ -1868,3 +1868,14 @@ $tooltip-item-bonus: rgb(255, 255, 0);
   z-index: 5;
   pointer-events: none;
 }
+
+.class-activity-livepop-chart {
+  height: 360px;
+  margin-top: 1rem;
+  position: relative;
+  width: 100%;
+}
+
+.class-activity-livepop-ranges {
+  margin-bottom: 0.75rem;
+}

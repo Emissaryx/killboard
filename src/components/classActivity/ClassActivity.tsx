@@ -1,5 +1,6 @@
 import { format } from 'date-fns';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Chart from 'chart.js/auto';
 import { useTranslation } from 'react-i18next';
 import type { ReactElement } from 'react';
 import clsx from 'clsx';
@@ -1602,10 +1603,275 @@ const ClassActivityRealmTrend = ({
   );
 };
 
+// LIVE POP: raw per-realm counts from the population_snapshots table (see
+// the Worker's insertPopulationSnapshot for what these numbers actually
+// mean - distinct characters seen fighting in that ~5-minute polling
+// window, not a literal "logged in" count, since the production API has
+// no such field). v1 keeps this deliberately small: two fixed ranges (24
+// hours, 7 days) and a raw point-per-tick line chart - no bucketing, no
+// tier split, since the Worker endpoint already caps out well before that
+// becomes necessary at these ranges.
+interface PopulationSnapshotRow {
+  polled_at: string;
+  realm: 0 | 1;
+  count: number;
+}
+
+interface PopulationSnapshotsResponse {
+  hours: number;
+  since: string;
+  snapshots: PopulationSnapshotRow[];
+}
+
+interface PopulationPoint {
+  time: string;
+  order: number;
+  destruction: number;
+}
+
+interface LivePopState {
+  loading: boolean;
+  error?: Error;
+  points: PopulationPoint[];
+}
+
+const usePopulationSnapshots = (hours: number): LivePopState => {
+  const [state, setState] = useState<LivePopState>({
+    loading: true,
+    points: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState((prev) => ({ ...prev, loading: true, error: undefined }));
+
+    const load = async (): Promise<void> => {
+      try {
+        const response = await fetch(
+          `${CLASS_ACTIVITY_WORKER_URL}/population-snapshots?hours=${hours}`,
+        );
+        const data = (await response.json()) as PopulationSnapshotsResponse & {
+          error?: string;
+        };
+        if (!response.ok || data.error || !data.snapshots) {
+          throw new Error(
+            data.error ??
+              `Class Activity Worker responded with ${response.status}`,
+          );
+        }
+        if (cancelled) {
+          return;
+        }
+
+        // Each poll tick writes one row per realm sharing the same
+        // polled_at timestamp - pivot those pairs back into one point per
+        // tick with both realms side by side, which is what the chart
+        // actually wants to plot.
+        const byTime = new Map<string, PopulationPoint>();
+        for (const snapshot of data.snapshots) {
+          const point = byTime.get(snapshot.polled_at) ?? {
+            time: snapshot.polled_at,
+            order: 0,
+            destruction: 0,
+          };
+          if (snapshot.realm === REALM_ORDER) {
+            point.order = snapshot.count;
+          } else {
+            point.destruction = snapshot.count;
+          }
+          byTime.set(snapshot.polled_at, point);
+        }
+        const points = [...byTime.values()].sort((a, b) =>
+          a.time.localeCompare(b.time),
+        );
+
+        setState({ loading: false, points });
+      } catch (err) {
+        if (!cancelled) {
+          setState({
+            loading: false,
+            error: err instanceof Error ? err : new Error(String(err)),
+            points: [],
+          });
+        }
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hours]);
+
+  return state;
+};
+
+// Chart.js instance lives outside React state on purpose - re-creating the
+// canvas on every data refresh causes a visible flash/reflow, so this
+// mounts the chart once and pushes new data into the existing instance
+// instead. Two effects, not one: the first runs only on mount/unmount (the
+// canvas ref never changes), the second re-runs whenever `points` changes
+// and just mutates the already-mounted chart's data in place.
+const LivePopChart = ({
+  points,
+}: {
+  points: PopulationPoint[];
+}): ReactElement => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const chartRef = useRef<Chart | null>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) {
+      return undefined;
+    }
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: 'Order',
+            data: [],
+            borderColor: 'rgb(72, 128, 255)',
+            backgroundColor: 'rgba(72, 128, 255, 0.15)',
+            fill: true,
+            tension: 0.25,
+            pointRadius: 0,
+            borderWidth: 2,
+          },
+          {
+            label: 'Destruction',
+            data: [],
+            borderColor: 'rgb(235, 70, 70)',
+            backgroundColor: 'rgba(235, 70, 70, 0.15)',
+            fill: true,
+            tension: 0.25,
+            pointRadius: 0,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            ticks: { color: 'rgba(255, 255, 255, 0.6)', maxTicksLimit: 10 },
+            grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: { color: 'rgba(255, 255, 255, 0.6)' },
+            grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          },
+        },
+        plugins: {
+          legend: { labels: { color: 'rgba(255, 255, 255, 0.85)' } },
+        },
+      },
+    });
+
+    return () => {
+      chartRef.current?.destroy();
+      chartRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) {
+      return;
+    }
+    chart.data.labels = points.map((point) =>
+      format(new Date(point.time), 'MMM d, HH:mm'),
+    );
+    chart.data.datasets[0].data = points.map((point) => point.order);
+    chart.data.datasets[1].data = points.map((point) => point.destruction);
+    chart.update();
+  }, [points]);
+
+  return (
+    <div className="class-activity-livepop-chart">
+      <canvas ref={canvasRef} />
+    </div>
+  );
+};
+
+const LIVE_POP_RANGES: { key: string; label: string; hours: number }[] = [
+  { key: '24h', label: 'Last 24 hours', hours: 24 },
+  { key: '7d', label: 'Last 7 days', hours: 24 * 7 },
+];
+
+const ClassActivityLivePop = (): ReactElement => {
+  const [rangeKey, setRangeKey] = useState<string>(
+    LIVE_POP_RANGES[0]?.key ?? '24h',
+  );
+  const range =
+    LIVE_POP_RANGES.find((candidate) => candidate.key === rangeKey) ??
+    LIVE_POP_RANGES[0];
+  const { loading, error, points } = usePopulationSnapshots(range?.hours ?? 24);
+  const latest = points.at(-1);
+
+  return (
+    <>
+      <div className="class-activity-subtabs class-activity-livepop-ranges">
+        {LIVE_POP_RANGES.map((candidate) => (
+          <button
+            className={candidate.key === rangeKey ? 'is-active' : ''}
+            key={candidate.key}
+            onClick={() => {
+              setRangeKey(candidate.key);
+            }}
+            type="button"
+          >
+            {candidate.label}
+          </button>
+        ))}
+      </div>
+      <p className="class-activity-trend-range">
+        Order vs Destruction characters active in RvR, sampled roughly every 5
+        minutes.
+      </p>
+      {error && <ErrorMessage message={error.message} name={error.name} />}
+      {loading && (
+        <div className="scenario-window-loading">
+          <progress className="progress is-small is-primary" />
+          <strong>Loading population history…</strong>
+        </div>
+      )}
+      {!loading && !error && points.length === 0 && (
+        <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+          No population data yet for this window - tracking only just started,
+          so give it a little time to fill in.
+        </p>
+      )}
+      {!loading && !error && points.length > 0 && (
+        <>
+          {latest && (
+            <p className="class-activity-trend-range">
+              Right now:{' '}
+              <span className="scenario-breakdown-order">
+                {latest.order.toLocaleString()} Order
+              </span>{' '}
+              &middot;{' '}
+              <span className="scenario-breakdown-destruction">
+                {latest.destruction.toLocaleString()} Destruction
+              </span>
+            </p>
+          )}
+          <LivePopChart points={points} />
+        </>
+      )}
+    </>
+  );
+};
+
 export const ClassActivity = (): ReactElement => {
   const { t } = useTranslation(['pages']);
   const [subTab, setSubTab] = useState<
-    'overview' | 'compare' | 'trend' | 'realms'
+    'overview' | 'compare' | 'trend' | 'realms' | 'livepop'
   >('overview');
   const currentMonth = monthKeyForDate(new Date());
 
@@ -1648,6 +1914,15 @@ export const ClassActivity = (): ReactElement => {
         >
           Realms
         </button>
+        <button
+          className={subTab === 'livepop' ? 'is-active' : ''}
+          type="button"
+          onClick={() => {
+            setSubTab('livepop');
+          }}
+        >
+          Live Pop
+        </button>
       </div>
       {subTab === 'overview' && (
         <ClassActivityOverview currentMonth={currentMonth} />
@@ -1659,6 +1934,7 @@ export const ClassActivity = (): ReactElement => {
       {subTab === 'realms' && (
         <ClassActivityRealmTrend currentMonth={currentMonth} />
       )}
+      {subTab === 'livepop' && <ClassActivityLivePop />}
     </>
   );
 };
