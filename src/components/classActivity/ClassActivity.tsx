@@ -692,6 +692,19 @@ const ClassActivityTrend = ({
   const monthsWithData = months.filter(
     (month) => (byMonth[month]?.monthsWithData.length ?? 0) > 0,
   );
+  // The final month in this window is always currentMonth (trailing-12
+  // ends "today"), and while it's still being counted its total is only
+  // a partial-month figure - not comparable to the 11 fully-elapsed
+  // months around it. Left in, it would drag the average down and make
+  // "vs average" read as a huge, misleading decline every single month
+  // (confirmed against real data: a mid-month partial count came in at
+  // roughly a quarter of the prior *complete* month's final total,
+  // which is normal accumulation, not an actual drop in activity).
+  // coverageSince being present is the same "still counting" signal the
+  // Overview tab already uses for its own "Counting through ..." note.
+  const currentMonthCoverageSince =
+    byMonth[currentMonth]?.coverageSince ?? null;
+  const isCurrentMonthOngoing = currentMonthCoverageSince != null;
   const isFullyTracked = monthsWithData.length === months.length;
 
   const trendRows = CAREER_META.map((meta) => {
@@ -701,6 +714,7 @@ const ClassActivityTrend = ({
     const trackedCounts = months
       .map((month, index) => ({ month, count: monthly[index] }))
       .filter(({ month }) => monthsWithData.includes(month))
+      .filter(({ month }) => !(isCurrentMonthOngoing && month === currentMonth))
       .map(({ count }) => count);
     const average =
       trackedCounts.length === 0
@@ -709,7 +723,9 @@ const ClassActivityTrend = ({
           trackedCounts.length;
     const currentCount = monthly.at(-1) ?? 0;
     const vsAverage =
-      average === 0 ? null : ((currentCount - average) / average) * 100;
+      average === 0 || isCurrentMonthOngoing
+        ? null
+        : ((currentCount - average) / average) * 100;
     const maxMonthly = Math.max(1, ...monthly);
     return {
       career: meta.career,
@@ -728,6 +744,15 @@ const ClassActivityTrend = ({
         {monthLabelForKey(months[0])} &ndash;{' '}
         {monthLabelForKey(months.at(-1) ?? currentMonth)}
       </p>
+      {isCurrentMonthOngoing && (
+        <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+          {monthLabelForKey(currentMonth)} is still in progress (counting
+          through {new Date(currentMonthCoverageSince).toLocaleString()} so
+          far), so it's excluded from the 12-month average and its &quot;vs
+          average&quot; below - comparing a partial month against 11 complete
+          ones would always look like a big drop even when activity is normal.
+        </p>
+      )}
       {!isFullyTracked && (
         <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
           Only {monthsWithData.length} of {months.length} months in this window
@@ -782,7 +807,7 @@ const ClassActivityTrend = ({
                 </div>
               </td>
               <td>{row.currentCount.toLocaleString()}</td>
-              <td>{row.average.toFixed(1)}</td>
+              <td>{row.average === 0 ? '—' : row.average.toFixed(1)}</td>
               <td
                 className={
                   row.vsAverage == null
@@ -790,9 +815,11 @@ const ClassActivityTrend = ({
                     : deltaClassName(row.vsAverage)
                 }
               >
-                {row.vsAverage == null
-                  ? '—'
-                  : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
+                {isCurrentMonthOngoing
+                  ? 'in progress'
+                  : row.vsAverage == null
+                    ? '—'
+                    : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
               </td>
             </tr>
           ))}
