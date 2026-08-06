@@ -1066,11 +1066,242 @@ const ClassActivityTrend = ({
   );
 };
 
+// Separate tab from the per-class Trend view above - R1CH's original ask
+// ("shouldn't that show percentage") turned out to mean something more
+// specific once he clarified: he wanted to compare realm composition
+// (Order vs Destruction share of the active population) over time, not
+// per-class share. Same underlying data and math (reuses the same
+// trend/share stat shapes as ClassActivityTrend), just aggregated by
+// realm instead of by career, and with its own independent end-month
+// picker rather than sharing state with the Trend tab.
+const ClassActivityRealmTrend = ({
+  currentMonth,
+}: {
+  currentMonth: string;
+}): ReactElement => {
+  const { t } = useTranslation(['pages']);
+  const [endMonth, setEndMonth] = useState<string>(() =>
+    previousMonthKey(currentMonth),
+  );
+  const months = trailingMonthKeys(endMonth, 12);
+  const { loading, error, byMonth } = useClassActivityMonths(months);
+
+  const monthsWithData = months.filter(
+    (month) => (byMonth[month]?.monthsWithData.length ?? 0) > 0,
+  );
+  const endMonthCoverageSince = byMonth[endMonth]?.coverageSince ?? null;
+  const isEndMonthOngoing =
+    endMonth === currentMonth && endMonthCoverageSince != null;
+  const isFullyTracked = monthsWithData.length === months.length;
+
+  const totalMonthly = months.map((month) => byMonth[month]?.total ?? 0);
+
+  const computeTrendStats = (
+    monthly: number[],
+  ): {
+    monthly: number[];
+    average: number;
+    currentCount: number;
+    vsAverage: number | null;
+    maxMonthly: number;
+  } => {
+    const trackedCounts = months
+      .map((month, index) => ({ month, count: monthly[index] }))
+      .filter(({ month }) => monthsWithData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ count }) => count);
+    const average =
+      trackedCounts.length === 0
+        ? 0
+        : trackedCounts.reduce((sum, count) => sum + count, 0) /
+          trackedCounts.length;
+    const currentCount = monthly.at(-1) ?? 0;
+    const vsAverage =
+      average === 0 || isEndMonthOngoing
+        ? null
+        : ((currentCount - average) / average) * 100;
+    const maxMonthly = Math.max(1, ...monthly);
+    return { monthly, average, currentCount, vsAverage, maxMonthly };
+  };
+
+  const computeShareStats = (
+    monthly: number[],
+  ): {
+    shareAverage: number;
+    currentShare: number;
+    shareVsAverage: number | null;
+  } => {
+    const shareMonthly = monthly.map((count, index) =>
+      totalMonthly[index] > 0 ? (count / totalMonthly[index]) * 100 : 0,
+    );
+    const trackedShares = months
+      .map((month, index) => ({ month, share: shareMonthly[index] }))
+      .filter(({ month }) => monthsWithData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ share }) => share);
+    const shareAverage =
+      trackedShares.length === 0
+        ? 0
+        : trackedShares.reduce((sum, share) => sum + share, 0) /
+          trackedShares.length;
+    const currentShare = shareMonthly.at(-1) ?? 0;
+    const shareVsAverage =
+      trackedShares.length === 0 || isEndMonthOngoing
+        ? null
+        : currentShare - shareAverage;
+    return { shareAverage, currentShare, shareVsAverage };
+  };
+
+  const monthlyForRealm = (
+    realm: typeof REALM_ORDER | typeof REALM_DESTRUCTION,
+  ): number[] =>
+    months.map((month) =>
+      CAREER_META.filter((meta) => meta.realm === realm).reduce(
+        (sum, meta) =>
+          sum + (byMonth[month]?.byCareer[meta.career]?.count ?? 0),
+        0,
+      ),
+    );
+
+  const realmRows = [
+    {
+      key: 'order' as const,
+      label: 'Order',
+      textClass: 'scenario-breakdown-order',
+      barColorClass: 'class-activity-sparkline-bar-order',
+      ...computeTrendStats(monthlyForRealm(REALM_ORDER)),
+      ...computeShareStats(monthlyForRealm(REALM_ORDER)),
+    },
+    {
+      key: 'destruction' as const,
+      label: 'Destruction',
+      textClass: 'scenario-breakdown-destruction',
+      barColorClass: 'class-activity-sparkline-bar-destruction',
+      ...computeTrendStats(monthlyForRealm(REALM_DESTRUCTION)),
+      ...computeShareStats(monthlyForRealm(REALM_DESTRUCTION)),
+    },
+  ];
+
+  if (error) {
+    return <ErrorMessage message={error.message} name={error.name} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="scenario-window-loading">
+        <progress className="progress is-small is-primary" />
+        <strong>Loading last 12 months…</strong>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <label className="class-activity-trend-month-picker">
+        <span>Average ending</span>
+        <input
+          max={currentMonth}
+          onChange={(event) => {
+            if (event.target.value) {
+              setEndMonth(event.target.value);
+            }
+          }}
+          type="month"
+          value={endMonth}
+        />
+      </label>
+      <p className="class-activity-trend-range">
+        {monthLabelForKey(months[0])} &ndash;{' '}
+        {monthLabelForKey(months.at(-1) ?? endMonth)}
+      </p>
+      {isEndMonthOngoing && (
+        <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+          {monthLabelForKey(endMonth)} is still in progress (counting through{' '}
+          {new Date(endMonthCoverageSince).toLocaleString()} so far), so it's
+          excluded from the 12-month average and its &quot;vs average&quot;
+          below - comparing a partial month against 11 complete ones would
+          always look like a big drop even when activity is normal.
+        </p>
+      )}
+      {!isFullyTracked && (
+        <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+          Only {monthsWithData.length} of {months.length} months in this window
+          have recorded data so far - the balance and trend likely undercount
+          the full window.
+        </p>
+      )}
+      <table className="table is-fullwidth class-activity-table">
+        <thead>
+          <tr>
+            <th>Realm</th>
+            <th>
+              Trend (last 12 months)
+              <div className="class-activity-sparkline-axis">
+                <span>{monthShortLabelForKey(months[0])}</span>
+                <span>{monthShortLabelForKey(months.at(-1) ?? endMonth)}</span>
+              </div>
+            </th>
+            <th>{monthLabelForKey(endMonth)}</th>
+            <th>{t('pages:classActivity.trendAverage')}</th>
+            <th>{t('pages:classActivity.trendVsAverage')}</th>
+            <th>% of pop</th>
+            <th>Share vs avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {realmRows.map((row) => (
+            <tr key={row.key}>
+              <td className={row.textClass}>{row.label}</td>
+              <td>
+                <TrendSparklineCell
+                  barColorClass={row.barColorClass}
+                  maxMonthly={row.maxMonthly}
+                  monthly={row.monthly}
+                  months={months}
+                />
+              </td>
+              <td>{row.currentCount.toLocaleString()}</td>
+              <td>{row.average === 0 ? '—' : row.average.toFixed(1)}</td>
+              <td
+                className={
+                  row.vsAverage == null
+                    ? undefined
+                    : deltaClassName(row.vsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.vsAverage == null
+                    ? '—'
+                    : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
+              </td>
+              <td>{row.currentShare.toFixed(1)}%</td>
+              <td
+                className={
+                  row.shareVsAverage == null
+                    ? undefined
+                    : deltaClassName(row.shareVsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.shareVsAverage == null
+                    ? '—'
+                    : `${row.shareVsAverage > 0 ? '+' : ''}${row.shareVsAverage.toFixed(1)}pp`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+};
+
 export const ClassActivity = (): ReactElement => {
   const { t } = useTranslation(['pages']);
-  const [subTab, setSubTab] = useState<'overview' | 'compare' | 'trend'>(
-    'overview',
-  );
+  const [subTab, setSubTab] = useState<
+    'overview' | 'compare' | 'trend' | 'realms'
+  >('overview');
   const currentMonth = monthKeyForDate(new Date());
 
   return (
@@ -1103,6 +1334,15 @@ export const ClassActivity = (): ReactElement => {
         >
           {t('pages:classActivity.trend')}
         </button>
+        <button
+          className={subTab === 'realms' ? 'is-active' : ''}
+          type="button"
+          onClick={() => {
+            setSubTab('realms');
+          }}
+        >
+          Realms
+        </button>
       </div>
       {subTab === 'overview' && (
         <ClassActivityOverview currentMonth={currentMonth} />
@@ -1111,6 +1351,9 @@ export const ClassActivity = (): ReactElement => {
         <ClassActivityCompare currentMonth={currentMonth} />
       )}
       {subTab === 'trend' && <ClassActivityTrend currentMonth={currentMonth} />}
+      {subTab === 'realms' && (
+        <ClassActivityRealmTrend currentMonth={currentMonth} />
+      )}
     </>
   );
 };
