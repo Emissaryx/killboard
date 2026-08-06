@@ -48,6 +48,14 @@ const monthLabel = (key: string): string => {
   return format(new Date(year, month - 1, 1), 'MMMM yyyy');
 };
 
+// Compact "MMM yy" form (e.g. "Aug 25") - used for axis-style labels where
+// the full "MMMM yyyy" form (monthLabel) would be too wide, like the
+// first/last tick marks under the Trend tab's sparkline column.
+const monthShortLabel = (key: string): string => {
+  const { year, month } = parseMonthKey(key);
+  return format(new Date(year, month - 1, 1), 'MMM yy');
+};
+
 // Subtracts (count - 1) months from a "YYYY-MM" key, e.g. 11 months back
 // from 2026-08 gives 2025-09 - used for the trailing-12-months window.
 const monthsBack = (key: string, count: number): string => {
@@ -157,6 +165,7 @@ export const trailingMonthKeys = (endMonth: string, count: number): string[] =>
   );
 
 export const monthLabelForKey = monthLabel;
+export const monthShortLabelForKey = monthShortLabel;
 
 // One calendar month before the given "YYYY-MM" key - used to default the
 // Trend tab's end-month picker to the last *complete* month rather than

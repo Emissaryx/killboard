@@ -11,6 +11,7 @@ import {
   type Period,
   buildMonthPeriod,
   monthLabelForKey,
+  monthShortLabelForKey,
   previousMonthKey,
   trailingMonthKeys,
 } from './periodUtils';
@@ -796,7 +797,13 @@ const ClassActivityTrend = ({
           <tr>
             <th>Class</th>
             <th>Realm</th>
-            <th>Trend (last 12 months)</th>
+            <th>
+              Trend (last 12 months)
+              <div className="class-activity-sparkline-axis">
+                <span>{monthShortLabelForKey(months[0])}</span>
+                <span>{monthShortLabelForKey(months.at(-1) ?? endMonth)}</span>
+              </div>
+            </th>
             <th>{monthLabelForKey(endMonth)}</th>
             <th>{t('pages:classActivity.trendAverage')}</th>
             <th>{t('pages:classActivity.trendVsAverage')}</th>
@@ -835,9 +842,19 @@ const ClassActivityTrend = ({
                       </span>
                       <div className="class-activity-sparkline-bar-track">
                         <span
-                          className={`class-activity-sparkline-bar class-activity-sparkline-bar-${
-                            row.realm === REALM_ORDER ? 'order' : 'destruction'
-                          }`}
+                          className={[
+                            'class-activity-sparkline-bar',
+                            `class-activity-sparkline-bar-${
+                              row.realm === REALM_ORDER
+                                ? 'order'
+                                : 'destruction'
+                            }`,
+                            index === months.length - 1
+                              ? 'class-activity-sparkline-bar-current'
+                              : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')}
                           style={{
                             height: `${(count / row.maxMonthly) * 100}%`,
                           }}
