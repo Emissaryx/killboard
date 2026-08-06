@@ -39,6 +39,7 @@
   "classActivity": {
     "overview": "Overview",
     "compare": "Compare",
+    "trend": "Trend",
     "periodA": "Period A",
     "periodB": "Period B",
     "granularity": "View by",
@@ -47,7 +48,10 @@
     "halfYear": "Half-Year",
     "year": "Year",
     "trailing12Months": "Last 12 Months",
-    "change": "Change"
+    "change": "Change",
+    "trendCurrentMonth": "This month",
+    "trendAverage": "12-mo avg",
+    "trendVsAverage": "vs average"
   },
   "killPage": {
     "killer": "Killer",

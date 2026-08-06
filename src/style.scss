@@ -380,6 +380,34 @@ td.scenariolist-score-destruction {
   vertical-align: middle;
 }
 
+.class-activity-trend-range {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  margin-bottom: 0.75rem;
+}
+
+.class-activity-sparkline {
+  align-items: flex-end;
+  display: flex;
+  gap: 2px;
+  height: 28px;
+  width: 100%;
+}
+
+.class-activity-sparkline-bar {
+  background: rgba(255, 255, 255, 0.15);
+  flex: 1 1 0;
+  min-height: 2px;
+}
+
+.class-activity-sparkline-bar-order {
+  background: rgb(12, 47, 158);
+}
+
+.class-activity-sparkline-bar-destruction {
+  background: rgb(158, 12, 13);
+}
+
 @media (max-width: 768px) {
   .class-activity-toolbar {
     align-items: flex-start;

@@ -5,7 +5,12 @@ import { format } from 'date-fns';
 // that's how the Worker's D1 table is keyed. Quarter/half-year/year/last-
 // 12-months are all just different ways of picking that range - there's
 // no separate backend concept for any of them.
-export type Granularity = 'month' | 'quarter' | 'halfYear' | 'year' | 'trailing12';
+export type Granularity =
+  | 'month'
+  | 'quarter'
+  | 'halfYear'
+  | 'year'
+  | 'trailing12';
 
 export interface Period {
   granularity: Granularity;
@@ -59,8 +64,10 @@ export const availableYears = (currentYear: number): number[] => {
   return years;
 };
 
-const clampToCurrentMonth = (candidate: string, currentMonth: string): string =>
-  candidate > currentMonth ? currentMonth : candidate;
+const clampToCurrentMonth = (
+  candidate: string,
+  currentMonth: string,
+): string => (candidate > currentMonth ? currentMonth : candidate);
 
 export const buildMonthPeriod = (month: string): Period => ({
   granularity: 'month',
@@ -139,3 +146,14 @@ export const buildTrailing12Period = (currentMonth: string): Period => {
 
 export const defaultPeriod = (currentMonth: string): Period =>
   buildMonthPeriod(currentMonth);
+
+// The trailing N calendar-month keys ending at (and including) the given
+// month, oldest first - e.g. trailingMonthKeys('2026-08', 12) gives
+// ['2025-09', '2025-10', ..., '2026-08']. Used by the Trend tab, which
+// needs each individual month's data rather than one summed range.
+export const trailingMonthKeys = (endMonth: string, count: number): string[] =>
+  Array.from({ length: count }, (_, index) =>
+    monthsBack(endMonth, count - 1 - index),
+  );
+
+export const monthLabelForKey = monthLabel;

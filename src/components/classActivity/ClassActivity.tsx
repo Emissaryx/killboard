@@ -7,7 +7,12 @@ import { assetUrl, careerIcon } from '@/utils';
 import { scenarioCareerName } from '@/components/scenario/scenarioRoles';
 import { ErrorMessage } from '@/components/global/ErrorMessage';
 import { PeriodPicker, monthKeyForDate } from './PeriodPicker';
-import { type Period, buildMonthPeriod } from './periodUtils';
+import {
+  type Period,
+  buildMonthPeriod,
+  monthLabelForKey,
+  trailingMonthKeys,
+} from './periodUtils';
 
 // This page used to ask production-api.waremu.com's activeCharactersStats
 // for a full month directly, which is an expensive live aggregate scan —
@@ -19,7 +24,8 @@ import { type Period, buildMonthPeriod } from './periodUtils';
 // DISTINCT characters across any inclusive range of calendar-month
 // buckets - a single month, a quarter, a half-year, a year, or a trailing
 // 12-month window are all just different [from, to] ranges to it.
-const CLASS_ACTIVITY_WORKER_URL = 'https://killboard-class-activity.tcates79.workers.dev';
+const CLASS_ACTIVITY_WORKER_URL =
+  'https://killboard-class-activity.tcates79.workers.dev';
 
 const REALM_ORDER = 0;
 const REALM_DESTRUCTION = 1;
@@ -104,7 +110,9 @@ const useClassActivityRange = (period: Period): RangeState => {
         const response = await fetch(
           `${CLASS_ACTIVITY_WORKER_URL}/class-activity-range?from=${period.from}&to=${period.to}`,
         );
-        const data = (await response.json()) as ClassActivityRangeResponse & { error?: string };
+        const data = (await response.json()) as ClassActivityRangeResponse & {
+          error?: string;
+        };
         // Belt-and-suspenders: don't trust response.ok alone. The Worker
         // always returns an `error` field (never `byCareer`) on a
         // validation failure, whatever HTTP status carries it - checking
@@ -114,7 +122,8 @@ const useClassActivityRange = (period: Period): RangeState => {
         // undefined.
         if (!response.ok || data.error || !data.byCareer) {
           throw new Error(
-            data.error ?? `Class Activity Worker responded with ${response.status}`,
+            data.error ??
+              `Class Activity Worker responded with ${response.status}`,
           );
         }
         if (cancelled) {
@@ -207,7 +216,9 @@ const ClassActivityOverview = ({
 }: {
   currentMonth: string;
 }): ReactElement => {
-  const [period, setPeriod] = useState<Period>(() => buildMonthPeriod(currentMonth));
+  const [period, setPeriod] = useState<Period>(() =>
+    buildMonthPeriod(currentMonth),
+  );
   const { loading, error, rows, total, monthsWithData, coverageSince } =
     useClassActivityRange(period);
 
@@ -218,7 +229,9 @@ const ClassActivityOverview = ({
   const requestedMonths = monthsInRange(period.from, period.to);
   const isUntracked = !loading && monthsWithData.length === 0;
   const isPartiallyTracked =
-    !loading && monthsWithData.length > 0 && monthsWithData.length < requestedMonths;
+    !loading &&
+    monthsWithData.length > 0 &&
+    monthsWithData.length < requestedMonths;
   const isOngoing = period.to >= currentMonth && coverageSince != null;
 
   const orderRows = rows
@@ -228,9 +241,13 @@ const ClassActivityOverview = ({
     .filter((row) => row.realm === REALM_DESTRUCTION)
     .toSorted((a, b) => b.count - a.count);
   const orderTotal = orderRows.reduce((sum, row) => sum + row.count, 0);
-  const destructionTotal = destructionRows.reduce((sum, row) => sum + row.count, 0);
+  const destructionTotal = destructionRows.reduce(
+    (sum, row) => sum + row.count,
+    0,
+  );
   const combinedTotal = orderTotal + destructionTotal;
-  const orderSharePercent = combinedTotal === 0 ? 50 : (orderTotal / combinedTotal) * 100;
+  const orderSharePercent =
+    combinedTotal === 0 ? 50 : (orderTotal / combinedTotal) * 100;
   const maxCount = Math.max(1, ...rows.map((row) => row.count));
   const tableRows = rows.toSorted((a, b) => b.count - a.count);
 
@@ -290,7 +307,8 @@ const ClassActivityOverview = ({
                   <strong>{orderTotal.toLocaleString()}</strong> Order
                 </span>
                 <span>
-                  <strong>{destructionTotal.toLocaleString()}</strong> Destruction
+                  <strong>{destructionTotal.toLocaleString()}</strong>{' '}
+                  Destruction
                 </span>
               </div>
               <div className="scenario-win-balance-bar">
@@ -324,7 +342,8 @@ const ClassActivityOverview = ({
                 {tableRows.map((row) => {
                   const realmTotal =
                     row.realm === REALM_ORDER ? orderTotal : destructionTotal;
-                  const share = realmTotal === 0 ? 0 : (row.count / realmTotal) * 100;
+                  const share =
+                    realmTotal === 0 ? 0 : (row.count / realmTotal) * 100;
                   return (
                     <tr key={row.career}>
                       <td>
@@ -384,8 +403,12 @@ const ClassActivityCompare = ({
 }: {
   currentMonth: string;
 }): ReactElement => {
-  const [periodA, setPeriodA] = useState<Period>(() => buildMonthPeriod(currentMonth));
-  const [periodB, setPeriodB] = useState<Period>(() => oneYearBeforeMonth(currentMonth));
+  const [periodA, setPeriodA] = useState<Period>(() =>
+    buildMonthPeriod(currentMonth),
+  );
+  const [periodB, setPeriodB] = useState<Period>(() =>
+    oneYearBeforeMonth(currentMonth),
+  );
 
   const a = useClassActivityRange(periodA);
   const b = useClassActivityRange(periodB);
@@ -408,11 +431,23 @@ const ClassActivityCompare = ({
 
   const loading = a.loading || b.loading;
 
-  const orderA = rowsA.filter((r) => r.realm === REALM_ORDER).toSorted((x, y) => y.count - x.count);
-  const destA = rowsA.filter((r) => r.realm === REALM_DESTRUCTION).toSorted((x, y) => y.count - x.count);
-  const orderB = rowsB.filter((r) => r.realm === REALM_ORDER).toSorted((x, y) => y.count - x.count);
-  const destB = rowsB.filter((r) => r.realm === REALM_DESTRUCTION).toSorted((x, y) => y.count - x.count);
-  const maxCount = Math.max(1, ...rowsA.map((r) => r.count), ...rowsB.map((r) => r.count));
+  const orderA = rowsA
+    .filter((r) => r.realm === REALM_ORDER)
+    .toSorted((x, y) => y.count - x.count);
+  const destA = rowsA
+    .filter((r) => r.realm === REALM_DESTRUCTION)
+    .toSorted((x, y) => y.count - x.count);
+  const orderB = rowsB
+    .filter((r) => r.realm === REALM_ORDER)
+    .toSorted((x, y) => y.count - x.count);
+  const destB = rowsB
+    .filter((r) => r.realm === REALM_DESTRUCTION)
+    .toSorted((x, y) => y.count - x.count);
+  const maxCount = Math.max(
+    1,
+    ...rowsA.map((r) => r.count),
+    ...rowsB.map((r) => r.count),
+  );
 
   const deltaRows = CAREER_META.map((meta) => {
     const countA = rowsA.find((r) => r.career === meta.career)?.count ?? 0;
@@ -432,10 +467,20 @@ const ClassActivityCompare = ({
   return (
     <>
       <div className="class-activity-toolbar">
-        <PeriodPicker currentMonth={currentMonth} idPrefix="period-a" value={periodA} onChange={setPeriodA} />
+        <PeriodPicker
+          currentMonth={currentMonth}
+          idPrefix="period-a"
+          value={periodA}
+          onChange={setPeriodA}
+        />
       </div>
       <div className="class-activity-toolbar mb-4">
-        <PeriodPicker currentMonth={currentMonth} idPrefix="period-b" value={periodB} onChange={setPeriodB} />
+        <PeriodPicker
+          currentMonth={currentMonth}
+          idPrefix="period-b"
+          value={periodB}
+          onChange={setPeriodB}
+        />
       </div>
       {loading ? (
         <div className="scenario-window-loading">
@@ -502,7 +547,12 @@ const ClassActivityCompare = ({
               {deltaRows.map((row) => (
                 <tr key={row.career}>
                   <td>
-                    <img alt={row.career} height={20} src={careerIcon(row.career)} width={20} />{' '}
+                    <img
+                      alt={row.career}
+                      height={20}
+                      src={careerIcon(row.career)}
+                      width={20}
+                    />{' '}
                     {scenarioCareerName(row.career)}
                   </td>
                   <td
@@ -537,9 +587,226 @@ const ClassActivityCompare = ({
   );
 };
 
+// Fetches each of `months` individually (in parallel) rather than one
+// summed range - the Worker's /class-activity-range endpoint only
+// returns a total for whatever [from, to] it's given, so a real
+// month-by-month trend needs one request per month. That's 12 small
+// requests instead of the 1 the other two tabs make; acceptable since
+// this tab is a deliberate "look at the shape over a year" view, not
+// the page's default, so it isn't paying that cost on every visit.
+const useClassActivityMonths = (
+  months: string[],
+): {
+  loading: boolean;
+  error?: Error;
+  byMonth: Record<string, ClassActivityRangeResponse>;
+} => {
+  const [state, setState] = useState<{
+    loading: boolean;
+    error?: Error;
+    byMonth: Record<string, ClassActivityRangeResponse>;
+  }>({ loading: true, byMonth: {} });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState((prev) => ({ ...prev, loading: true, error: undefined }));
+
+    const load = async (): Promise<void> => {
+      try {
+        const results = await Promise.all(
+          months.map(async (month) => {
+            const response = await fetch(
+              `${CLASS_ACTIVITY_WORKER_URL}/class-activity-range?from=${month}&to=${month}`,
+            );
+            const data =
+              (await response.json()) as ClassActivityRangeResponse & {
+                error?: string;
+              };
+            if (!response.ok || data.error || !data.byCareer) {
+              throw new Error(
+                data.error ??
+                  `Class Activity Worker responded with ${response.status}`,
+              );
+            }
+            return [month, data] as const;
+          }),
+        );
+        if (cancelled) {
+          return;
+        }
+        setState({ loading: false, byMonth: Object.fromEntries(results) });
+      } catch (caughtError) {
+        if (!cancelled) {
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error:
+              caughtError instanceof Error
+                ? caughtError
+                : new Error('Unable to load character activity.'),
+          }));
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // months is a freshly-built array every render (trailingMonthKeys
+    // returns a new array each call) - depending on its joined value
+    // instead of the array reference avoids refetching on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [months.join(',')]);
+
+  return state;
+};
+
+// Shows each class's active-character count across the trailing 12
+// months plus its 12-month average, so a reviewer can tell whether the
+// current month is normal for that class or an outlier - something
+// neither Overview (one snapshot) nor Compare (two arbitrary snapshots)
+// answers on its own.
+const ClassActivityTrend = ({
+  currentMonth,
+}: {
+  currentMonth: string;
+}): ReactElement => {
+  const { t } = useTranslation(['pages']);
+  const months = trailingMonthKeys(currentMonth, 12);
+  const { loading, error, byMonth } = useClassActivityMonths(months);
+
+  if (error) {
+    return <ErrorMessage message={error.message} name={error.name} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="scenario-window-loading">
+        <progress className="progress is-small is-primary" />
+        <strong>Loading last 12 months…</strong>
+      </div>
+    );
+  }
+
+  const monthsWithData = months.filter(
+    (month) => (byMonth[month]?.monthsWithData.length ?? 0) > 0,
+  );
+  const isFullyTracked = monthsWithData.length === months.length;
+
+  const trendRows = CAREER_META.map((meta) => {
+    const monthly = months.map(
+      (month) => byMonth[month]?.byCareer[meta.career]?.count ?? 0,
+    );
+    const trackedCounts = months
+      .map((month, index) => ({ month, count: monthly[index] }))
+      .filter(({ month }) => monthsWithData.includes(month))
+      .map(({ count }) => count);
+    const average =
+      trackedCounts.length === 0
+        ? 0
+        : trackedCounts.reduce((sum, count) => sum + count, 0) /
+          trackedCounts.length;
+    const currentCount = monthly.at(-1) ?? 0;
+    const vsAverage =
+      average === 0 ? null : ((currentCount - average) / average) * 100;
+    const maxMonthly = Math.max(1, ...monthly);
+    return {
+      career: meta.career,
+      realm: meta.realm,
+      monthly,
+      average,
+      currentCount,
+      vsAverage,
+      maxMonthly,
+    };
+  }).toSorted((a, b) => b.currentCount - a.currentCount);
+
+  return (
+    <>
+      <p className="class-activity-trend-range">
+        {monthLabelForKey(months[0])} &ndash;{' '}
+        {monthLabelForKey(months.at(-1) ?? currentMonth)}
+      </p>
+      {!isFullyTracked && (
+        <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+          Only {monthsWithData.length} of {months.length} months in this window
+          have recorded data so far - the average and trend likely undercount
+          the full window.
+        </p>
+      )}
+      <table className="table is-fullwidth class-activity-table">
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Realm</th>
+            <th>Trend (last 12 months)</th>
+            <th>{t('pages:classActivity.trendCurrentMonth')}</th>
+            <th>{t('pages:classActivity.trendAverage')}</th>
+            <th>{t('pages:classActivity.trendVsAverage')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {trendRows.map((row) => (
+            <tr key={row.career}>
+              <td>
+                <img
+                  alt={row.career}
+                  height={20}
+                  src={careerIcon(row.career)}
+                  width={20}
+                />{' '}
+                {scenarioCareerName(row.career)}
+              </td>
+              <td
+                className={
+                  row.realm === REALM_ORDER
+                    ? 'scenario-breakdown-order'
+                    : 'scenario-breakdown-destruction'
+                }
+              >
+                {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
+              </td>
+              <td>
+                <div className="class-activity-sparkline">
+                  {row.monthly.map((count, index) => (
+                    <span
+                      key={months[index]}
+                      className={`class-activity-sparkline-bar class-activity-sparkline-bar-${
+                        row.realm === REALM_ORDER ? 'order' : 'destruction'
+                      }`}
+                      style={{ height: `${(count / row.maxMonthly) * 100}%` }}
+                      title={`${monthLabelForKey(months[index])}: ${count.toLocaleString()}`}
+                    />
+                  ))}
+                </div>
+              </td>
+              <td>{row.currentCount.toLocaleString()}</td>
+              <td>{row.average.toFixed(1)}</td>
+              <td
+                className={
+                  row.vsAverage == null
+                    ? undefined
+                    : deltaClassName(row.vsAverage)
+                }
+              >
+                {row.vsAverage == null
+                  ? '—'
+                  : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+};
+
 export const ClassActivity = (): ReactElement => {
   const { t } = useTranslation(['pages']);
-  const [subTab, setSubTab] = useState<'overview' | 'compare'>('overview');
+  const [subTab, setSubTab] = useState<'overview' | 'compare' | 'trend'>(
+    'overview',
+  );
   const currentMonth = monthKeyForDate(new Date());
 
   return (
@@ -563,12 +830,23 @@ export const ClassActivity = (): ReactElement => {
         >
           {t('pages:classActivity.compare')}
         </button>
+        <button
+          className={subTab === 'trend' ? 'is-active' : ''}
+          type="button"
+          onClick={() => {
+            setSubTab('trend');
+          }}
+        >
+          {t('pages:classActivity.trend')}
+        </button>
       </div>
-      {subTab === 'overview' ? (
+      {subTab === 'overview' && (
         <ClassActivityOverview currentMonth={currentMonth} />
-      ) : (
+      )}
+      {subTab === 'compare' && (
         <ClassActivityCompare currentMonth={currentMonth} />
       )}
+      {subTab === 'trend' && <ClassActivityTrend currentMonth={currentMonth} />}
     </>
   );
 };
