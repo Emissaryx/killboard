@@ -11,6 +11,7 @@ import {
   type Period,
   buildMonthPeriod,
   monthLabelForKey,
+  previousMonthKey,
   trailingMonthKeys,
 } from './periodUtils';
 
@@ -667,13 +668,26 @@ const useClassActivityMonths = (
 // current month is normal for that class or an outlier - something
 // neither Overview (one snapshot) nor Compare (two arbitrary snapshots)
 // answers on its own.
+const formatCompactCount = (count: number): string =>
+  new Intl.NumberFormat('en', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(count);
+
 const ClassActivityTrend = ({
   currentMonth,
 }: {
   currentMonth: string;
 }): ReactElement => {
   const { t } = useTranslation(['pages']);
-  const months = trailingMonthKeys(currentMonth, 12);
+  // Defaults to last month, not the actual current month - the current
+  // month is still accumulating, so an average window ending on it would
+  // always look like a decline (see the isEndMonthOngoing handling below).
+  // The user can pick any month via the picker, including the current one.
+  const [endMonth, setEndMonth] = useState<string>(() =>
+    previousMonthKey(currentMonth),
+  );
+  const months = trailingMonthKeys(endMonth, 12);
   const { loading, error, byMonth } = useClassActivityMonths(months);
 
   if (error) {
@@ -692,19 +706,18 @@ const ClassActivityTrend = ({
   const monthsWithData = months.filter(
     (month) => (byMonth[month]?.monthsWithData.length ?? 0) > 0,
   );
-  // The final month in this window is always currentMonth (trailing-12
-  // ends "today"), and while it's still being counted its total is only
-  // a partial-month figure - not comparable to the 11 fully-elapsed
-  // months around it. Left in, it would drag the average down and make
-  // "vs average" read as a huge, misleading decline every single month
+  // The final month in this window is whichever month was picked as the
+  // window's end. If that's the actual current (still-accumulating) month,
+  // its total is only a partial-month figure - not comparable to the 11
+  // fully-elapsed months around it, so it's excluded from the average and
+  // flagged as "in progress" instead of a misleading "vs average" percent
   // (confirmed against real data: a mid-month partial count came in at
-  // roughly a quarter of the prior *complete* month's final total,
-  // which is normal accumulation, not an actual drop in activity).
+  // roughly a quarter of the prior *complete* month's final total, which
+  // is normal accumulation, not an actual drop in activity).
   // coverageSince being present is the same "still counting" signal the
   // Overview tab already uses for its own "Counting through ..." note.
-  const currentMonthCoverageSince =
-    byMonth[currentMonth]?.coverageSince ?? null;
-  const isCurrentMonthOngoing = currentMonthCoverageSince != null;
+  const endMonthCoverageSince = byMonth[endMonth]?.coverageSince ?? null;
+  const isEndMonthOngoing = endMonthCoverageSince != null;
   const isFullyTracked = monthsWithData.length === months.length;
 
   const trendRows = CAREER_META.map((meta) => {
@@ -714,7 +727,7 @@ const ClassActivityTrend = ({
     const trackedCounts = months
       .map((month, index) => ({ month, count: monthly[index] }))
       .filter(({ month }) => monthsWithData.includes(month))
-      .filter(({ month }) => !(isCurrentMonthOngoing && month === currentMonth))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
       .map(({ count }) => count);
     const average =
       trackedCounts.length === 0
@@ -723,7 +736,7 @@ const ClassActivityTrend = ({
           trackedCounts.length;
     const currentCount = monthly.at(-1) ?? 0;
     const vsAverage =
-      average === 0 || isCurrentMonthOngoing
+      average === 0 || isEndMonthOngoing
         ? null
         : ((currentCount - average) / average) * 100;
     const maxMonthly = Math.max(1, ...monthly);
@@ -740,17 +753,30 @@ const ClassActivityTrend = ({
 
   return (
     <>
+      <label className="class-activity-trend-month-picker">
+        <span>Average ending</span>
+        <input
+          max={currentMonth}
+          onChange={(event) => {
+            if (event.target.value) {
+              setEndMonth(event.target.value);
+            }
+          }}
+          type="month"
+          value={endMonth}
+        />
+      </label>
       <p className="class-activity-trend-range">
         {monthLabelForKey(months[0])} &ndash;{' '}
-        {monthLabelForKey(months.at(-1) ?? currentMonth)}
+        {monthLabelForKey(months.at(-1) ?? endMonth)}
       </p>
-      {isCurrentMonthOngoing && (
+      {isEndMonthOngoing && (
         <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
-          {monthLabelForKey(currentMonth)} is still in progress (counting
-          through {new Date(currentMonthCoverageSince).toLocaleString()} so
-          far), so it's excluded from the 12-month average and its &quot;vs
-          average&quot; below - comparing a partial month against 11 complete
-          ones would always look like a big drop even when activity is normal.
+          {monthLabelForKey(endMonth)} is still in progress (counting through{' '}
+          {new Date(endMonthCoverageSince).toLocaleString()} so far), so it's
+          excluded from the 12-month average and its &quot;vs average&quot;
+          below - comparing a partial month against 11 complete ones would
+          always look like a big drop even when activity is normal.
         </p>
       )}
       {!isFullyTracked && (
@@ -766,7 +792,7 @@ const ClassActivityTrend = ({
             <th>Class</th>
             <th>Realm</th>
             <th>Trend (last 12 months)</th>
-            <th>{t('pages:classActivity.trendCurrentMonth')}</th>
+            <th>{monthLabelForKey(endMonth)}</th>
             <th>{t('pages:classActivity.trendAverage')}</th>
             <th>{t('pages:classActivity.trendVsAverage')}</th>
           </tr>
@@ -795,14 +821,25 @@ const ClassActivityTrend = ({
               <td>
                 <div className="class-activity-sparkline">
                   {row.monthly.map((count, index) => (
-                    <span
+                    <div
+                      className="class-activity-sparkline-col"
                       key={months[index]}
-                      className={`class-activity-sparkline-bar class-activity-sparkline-bar-${
-                        row.realm === REALM_ORDER ? 'order' : 'destruction'
-                      }`}
-                      style={{ height: `${(count / row.maxMonthly) * 100}%` }}
-                      title={`${monthLabelForKey(months[index])}: ${count.toLocaleString()}`}
-                    />
+                    >
+                      <span className="class-activity-sparkline-value">
+                        {count > 0 ? formatCompactCount(count) : ''}
+                      </span>
+                      <div className="class-activity-sparkline-bar-track">
+                        <span
+                          className={`class-activity-sparkline-bar class-activity-sparkline-bar-${
+                            row.realm === REALM_ORDER ? 'order' : 'destruction'
+                          }`}
+                          style={{
+                            height: `${(count / row.maxMonthly) * 100}%`,
+                          }}
+                          title={`${monthLabelForKey(months[index])}: ${count.toLocaleString()}`}
+                        />
+                      </div>
+                    </div>
                   ))}
                 </div>
               </td>
@@ -815,7 +852,7 @@ const ClassActivityTrend = ({
                     : deltaClassName(row.vsAverage)
                 }
               >
-                {isCurrentMonthOngoing
+                {isEndMonthOngoing
                   ? 'in progress'
                   : row.vsAverage == null
                     ? '—'

@@ -380,6 +380,18 @@ td.scenariolist-score-destruction {
   vertical-align: middle;
 }
 
+.class-activity-trend-month-picker {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.class-activity-trend-month-picker span {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.85rem;
+}
+
 .class-activity-trend-range {
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.8rem;
@@ -390,6 +402,29 @@ td.scenariolist-score-destruction {
   align-items: flex-end;
   display: flex;
   gap: 2px;
+  width: 100%;
+}
+
+.class-activity-sparkline-col {
+  align-items: center;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.class-activity-sparkline-value {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.55rem;
+  height: 10px;
+  line-height: 10px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.class-activity-sparkline-bar-track {
+  align-items: flex-end;
+  display: flex;
   height: 28px;
   width: 100%;
 }

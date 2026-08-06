@@ -157,3 +157,8 @@ export const trailingMonthKeys = (endMonth: string, count: number): string[] =>
   );
 
 export const monthLabelForKey = monthLabel;
+
+// One calendar month before the given "YYYY-MM" key - used to default the
+// Trend tab's end-month picker to the last *complete* month rather than
+// the current (still-accumulating) one.
+export const previousMonthKey = (month: string): string => monthsBack(month, 1);
