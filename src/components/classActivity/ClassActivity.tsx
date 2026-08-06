@@ -714,10 +714,15 @@ const ClassActivityTrend = ({
   // (confirmed against real data: a mid-month partial count came in at
   // roughly a quarter of the prior *complete* month's final total, which
   // is normal accumulation, not an actual drop in activity).
-  // coverageSince being present is the same "still counting" signal the
-  // Overview tab already uses for its own "Counting through ..." note.
+  // The worker's coverageSince field is a global "data valid as of" cursor
+  // that's populated on every response, even for months that finished long
+  // ago - it is NOT a per-month "still counting" flag by itself. It only
+  // means "still in progress" when the requested month is the actual
+  // current calendar month (mirrors the `period.to >= currentMonth` gate
+  // the Overview tab uses for its own "Counting through ..." note).
   const endMonthCoverageSince = byMonth[endMonth]?.coverageSince ?? null;
-  const isEndMonthOngoing = endMonthCoverageSince != null;
+  const isEndMonthOngoing =
+    endMonth === currentMonth && endMonthCoverageSince != null;
   const isFullyTracked = monthsWithData.length === months.length;
 
   const trendRows = CAREER_META.map((meta) => {
