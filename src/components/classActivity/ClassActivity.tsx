@@ -785,6 +785,53 @@ const ClassActivityTrend = ({
     return { monthly, average, currentCount, vsAverage, maxMonthly };
   };
 
+  // Uses the worker's own per-month `total` (distinct active characters),
+  // not a sum of the per-career counts below - a character only has one
+  // career, so the two agree in practice, but `total` is the source of
+  // truth the Overview tab already uses for its own combined figure. It's
+  // computed first so it can double as the denominator for each class's
+  // "% of pop" share below.
+  const totalMonthly = months.map((month) => byMonth[month]?.total ?? 0);
+  const totalRow = computeTrendStats(totalMonthly);
+
+  // A raw count only shows whether a class was played more or less, which
+  // is indistinguishable from "the whole server was busier/quieter this
+  // month" - it doesn't tell you if the class actually got more or less
+  // popular *relative to everything else*. Dividing by that month's total
+  // (rather than comparing a class's raw count to its own average, which
+  // is what computeTrendStats already does above) answers that: a class
+  // holding a bigger or smaller slice of the population, independent of
+  // overall activity swings. (Flagged by R1CH in Discord - "shouldn't
+  // that show percentage? Otherwise it's just a proxy for activity.")
+  const computeShareStats = (
+    monthly: number[],
+  ): {
+    shareMonthly: number[];
+    shareAverage: number;
+    currentShare: number;
+    shareVsAverage: number | null;
+  } => {
+    const shareMonthly = monthly.map((count, index) =>
+      totalMonthly[index] > 0 ? (count / totalMonthly[index]) * 100 : 0,
+    );
+    const trackedShares = months
+      .map((month, index) => ({ month, share: shareMonthly[index] }))
+      .filter(({ month }) => monthsWithData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ share }) => share);
+    const shareAverage =
+      trackedShares.length === 0
+        ? 0
+        : trackedShares.reduce((sum, share) => sum + share, 0) /
+          trackedShares.length;
+    const currentShare = shareMonthly.at(-1) ?? 0;
+    const shareVsAverage =
+      trackedShares.length === 0 || isEndMonthOngoing
+        ? null
+        : currentShare - shareAverage;
+    return { shareMonthly, shareAverage, currentShare, shareVsAverage };
+  };
+
   const unsortedTrendRows = CAREER_META.map((meta) => {
     const monthly = months.map(
       (month) => byMonth[month]?.byCareer[meta.career]?.count ?? 0,
@@ -794,6 +841,7 @@ const ClassActivityTrend = ({
       careerName: scenarioCareerName(meta.career),
       realm: meta.realm,
       ...computeTrendStats(monthly),
+      ...computeShareStats(monthly),
     };
   });
 
@@ -814,13 +862,6 @@ const ClassActivityTrend = ({
     }
     return sortConfig.direction;
   };
-
-  // Uses the worker's own per-month `total` (distinct active characters),
-  // not a sum of the per-career counts above - a character only has one
-  // career, so the two agree in practice, but `total` is the source of
-  // truth the Overview tab already uses for its own combined figure.
-  const totalMonthly = months.map((month) => byMonth[month]?.total ?? 0);
-  const totalRow = computeTrendStats(totalMonthly);
 
   if (error) {
     return <ErrorMessage message={error.message} name={error.name} />;
@@ -871,7 +912,7 @@ const ClassActivityTrend = ({
         </p>
       )}
       <table className="table is-fullwidth class-activity-table">
-        <thead>
+        <thead className="is-relative">
           <tr>
             <th
               className={clsx('is-clickable', getSortClass('careerName'))}
@@ -909,6 +950,18 @@ const ClassActivityTrend = ({
               onClick={() => requestSort('vsAverage')}
             >
               {t('pages:classActivity.trendVsAverage')}
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('currentShare'))}
+              onClick={() => requestSort('currentShare')}
+            >
+              % of pop
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('shareVsAverage'))}
+              onClick={() => requestSort('shareVsAverage')}
+            >
+              Share vs avg
             </th>
           </tr>
         </thead>
@@ -958,6 +1011,20 @@ const ClassActivityTrend = ({
                     ? '—'
                     : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
               </td>
+              <td>{row.currentShare.toFixed(1)}%</td>
+              <td
+                className={
+                  row.shareVsAverage == null
+                    ? undefined
+                    : deltaClassName(row.shareVsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.shareVsAverage == null
+                    ? '—'
+                    : `${row.shareVsAverage > 0 ? '+' : ''}${row.shareVsAverage.toFixed(1)}pp`}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -990,6 +1057,8 @@ const ClassActivityTrend = ({
                   ? '—'
                   : `${totalRow.vsAverage > 0 ? '+' : ''}${totalRow.vsAverage.toFixed(0)}%`}
             </td>
+            <td>100.0%</td>
+            <td>—</td>
           </tr>
         </tfoot>
       </table>
