@@ -293,6 +293,14 @@ export const ScenarioList = ({
   }
 
   if (scenarios.length === 0) {
+    // Zero scenarios matched the selected window - a real, expected state
+    // (e.g. the default "Last hour" filter during a quiet stretch of the
+    // server's day), not a failure. It used to render the same
+    // ErrorMessage/"Not found" notification used for genuine query
+    // errors above, which reads as something being broken when nothing
+    // actually is. ScenarioStandouts already has its own matching empty
+    // state ("No matching characters in this scenario window.") for the
+    // same reason - this mirrors that instead of alarming the user.
     return (
       <>
         {characterId ? (
@@ -306,7 +314,9 @@ export const ScenarioList = ({
             scenarios={[]}
           />
         )}
-        <ErrorMessage customText={t('common:notFound')} />
+        <p className="has-text-centered p-4">
+          No scenarios in this time window.
+        </p>
       </>
     );
   }
