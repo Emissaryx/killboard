@@ -1074,6 +1074,232 @@ const ClassActivityTrend = ({
 // trend/share stat shapes as ClassActivityTrend), just aggregated by
 // realm instead of by career, and with its own independent end-month
 // picker rather than sharing state with the Trend tab.
+// Shows how popular each class is *within its own realm* (share of that
+// realm's population, not the server-wide total) over the trailing 12
+// months - the follow-up to the Order/Destruction split above. That split
+// answers "which realm is bigger," this answers "what's the meta within
+// each realm" (e.g. is Chosen gaining ground on Black Guard inside
+// Destruction specifically), which a server-wide "% of pop" figure can't
+// show since it's diluted by the other realm's classes.
+const RealmClassCompositionTable = ({
+  title,
+  careers,
+  months,
+  endMonth,
+  byMonth,
+  monthsWithData,
+  isEndMonthOngoing,
+  denominatorMonthly,
+  barColorClass,
+}: {
+  title: string;
+  careers: {
+    career: Career;
+    realm: typeof REALM_ORDER | typeof REALM_DESTRUCTION;
+  }[];
+  months: string[];
+  endMonth: string;
+  byMonth: Record<string, ClassActivityRangeResponse>;
+  monthsWithData: string[];
+  isEndMonthOngoing: boolean;
+  denominatorMonthly: number[];
+  barColorClass: string;
+}): ReactElement => {
+  const { t } = useTranslation(['pages']);
+
+  const computeTrendStats = (
+    monthly: number[],
+  ): {
+    monthly: number[];
+    average: number;
+    currentCount: number;
+    vsAverage: number | null;
+    maxMonthly: number;
+  } => {
+    const trackedCounts = months
+      .map((month, index) => ({ month, count: monthly[index] }))
+      .filter(({ month }) => monthsWithData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ count }) => count);
+    const average =
+      trackedCounts.length === 0
+        ? 0
+        : trackedCounts.reduce((sum, count) => sum + count, 0) /
+          trackedCounts.length;
+    const currentCount = monthly.at(-1) ?? 0;
+    const vsAverage =
+      average === 0 || isEndMonthOngoing
+        ? null
+        : ((currentCount - average) / average) * 100;
+    const maxMonthly = Math.max(1, ...monthly);
+    return { monthly, average, currentCount, vsAverage, maxMonthly };
+  };
+
+  const computeShareStats = (
+    monthly: number[],
+  ): {
+    shareAverage: number;
+    currentShare: number;
+    shareVsAverage: number | null;
+  } => {
+    const shareMonthly = monthly.map((count, index) =>
+      denominatorMonthly[index] > 0
+        ? (count / denominatorMonthly[index]) * 100
+        : 0,
+    );
+    const trackedShares = months
+      .map((month, index) => ({ month, share: shareMonthly[index] }))
+      .filter(({ month }) => monthsWithData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ share }) => share);
+    const shareAverage =
+      trackedShares.length === 0
+        ? 0
+        : trackedShares.reduce((sum, share) => sum + share, 0) /
+          trackedShares.length;
+    const currentShare = shareMonthly.at(-1) ?? 0;
+    const shareVsAverage =
+      trackedShares.length === 0 || isEndMonthOngoing
+        ? null
+        : currentShare - shareAverage;
+    return { shareAverage, currentShare, shareVsAverage };
+  };
+
+  const unsortedRows = careers.map((meta) => {
+    const monthly = months.map(
+      (month) => byMonth[month]?.byCareer[meta.career]?.count ?? 0,
+    );
+    return {
+      career: meta.career,
+      careerName: scenarioCareerName(meta.career),
+      ...computeTrendStats(monthly),
+      ...computeShareStats(monthly),
+    };
+  });
+
+  const {
+    items: rows,
+    requestSort,
+    sortConfig,
+  } = useSortableData(unsortedRows, {
+    direction: SortConfigDirection.descending,
+    key: 'currentCount',
+  });
+  const getSortClass = (key: string): string => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return '';
+    }
+    return sortConfig.direction;
+  };
+
+  return (
+    <>
+      <h3 className="title is-6 class-activity-composition-title">{title}</h3>
+      <table className="table is-fullwidth class-activity-table">
+        <thead className="is-relative">
+          <tr>
+            <th
+              className={clsx('is-clickable', getSortClass('careerName'))}
+              onClick={() => requestSort('careerName')}
+            >
+              Class
+            </th>
+            <th>
+              Trend (last 12 months)
+              <div className="class-activity-sparkline-axis">
+                <span>{monthShortLabelForKey(months[0])}</span>
+                <span>{monthShortLabelForKey(months.at(-1) ?? endMonth)}</span>
+              </div>
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('currentCount'))}
+              onClick={() => requestSort('currentCount')}
+            >
+              {monthLabelForKey(endMonth)}
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('average'))}
+              onClick={() => requestSort('average')}
+            >
+              {t('pages:classActivity.trendAverage')}
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('vsAverage'))}
+              onClick={() => requestSort('vsAverage')}
+            >
+              {t('pages:classActivity.trendVsAverage')}
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('currentShare'))}
+              onClick={() => requestSort('currentShare')}
+            >
+              % of realm
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('shareVsAverage'))}
+              onClick={() => requestSort('shareVsAverage')}
+            >
+              Share vs avg
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.career}>
+              <td>
+                <img
+                  alt={row.career}
+                  height={20}
+                  src={careerIcon(row.career)}
+                  width={20}
+                />{' '}
+                {row.careerName}
+              </td>
+              <td>
+                <TrendSparklineCell
+                  barColorClass={barColorClass}
+                  maxMonthly={row.maxMonthly}
+                  monthly={row.monthly}
+                  months={months}
+                />
+              </td>
+              <td>{row.currentCount.toLocaleString()}</td>
+              <td>{row.average === 0 ? '—' : row.average.toFixed(1)}</td>
+              <td
+                className={
+                  row.vsAverage == null
+                    ? undefined
+                    : deltaClassName(row.vsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.vsAverage == null
+                    ? '—'
+                    : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
+              </td>
+              <td>{row.currentShare.toFixed(1)}%</td>
+              <td
+                className={
+                  row.shareVsAverage == null
+                    ? undefined
+                    : deltaClassName(row.shareVsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.shareVsAverage == null
+                    ? '—'
+                    : `${row.shareVsAverage > 0 ? '+' : ''}${row.shareVsAverage.toFixed(1)}pp`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+};
+
 const ClassActivityRealmTrend = ({
   currentMonth,
 }: {
@@ -1163,24 +1389,32 @@ const ClassActivityRealmTrend = ({
       ),
     );
 
+  const orderMonthly = monthlyForRealm(REALM_ORDER);
+  const destructionMonthly = monthlyForRealm(REALM_DESTRUCTION);
+
   const realmRows = [
     {
       key: 'order' as const,
       label: 'Order',
       textClass: 'scenario-breakdown-order',
       barColorClass: 'class-activity-sparkline-bar-order',
-      ...computeTrendStats(monthlyForRealm(REALM_ORDER)),
-      ...computeShareStats(monthlyForRealm(REALM_ORDER)),
+      ...computeTrendStats(orderMonthly),
+      ...computeShareStats(orderMonthly),
     },
     {
       key: 'destruction' as const,
       label: 'Destruction',
       textClass: 'scenario-breakdown-destruction',
       barColorClass: 'class-activity-sparkline-bar-destruction',
-      ...computeTrendStats(monthlyForRealm(REALM_DESTRUCTION)),
-      ...computeShareStats(monthlyForRealm(REALM_DESTRUCTION)),
+      ...computeTrendStats(destructionMonthly),
+      ...computeShareStats(destructionMonthly),
     },
   ];
+
+  const orderCareers = CAREER_META.filter((meta) => meta.realm === REALM_ORDER);
+  const destructionCareers = CAREER_META.filter(
+    (meta) => meta.realm === REALM_DESTRUCTION,
+  );
 
   if (error) {
     return <ErrorMessage message={error.message} name={error.name} />;
@@ -1293,6 +1527,28 @@ const ClassActivityRealmTrend = ({
           ))}
         </tbody>
       </table>
+      <RealmClassCompositionTable
+        barColorClass="class-activity-sparkline-bar-order"
+        byMonth={byMonth}
+        careers={orderCareers}
+        denominatorMonthly={orderMonthly}
+        endMonth={endMonth}
+        isEndMonthOngoing={isEndMonthOngoing}
+        months={months}
+        monthsWithData={monthsWithData}
+        title="Order composition"
+      />
+      <RealmClassCompositionTable
+        barColorClass="class-activity-sparkline-bar-destruction"
+        byMonth={byMonth}
+        careers={destructionCareers}
+        denominatorMonthly={destructionMonthly}
+        endMonth={endMonth}
+        isEndMonthOngoing={isEndMonthOngoing}
+        months={months}
+        monthsWithData={monthsWithData}
+        title="Destruction composition"
+      />
     </>
   );
 };
