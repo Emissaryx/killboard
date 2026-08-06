@@ -228,8 +228,13 @@ export const questTypeIcon = (
   return 'quest_green.png';
 };
 
-export const creatureTitleIcon = (title: CreatureTitle): string | null => {
-  if (title === CreatureTitle.None) {
+export const creatureTitleIcon = (
+  title: CreatureTitle | null,
+): string | null => {
+  // production-api now returns null (rather than the CreatureTitle.None
+  // enum value) for creatures with no title - treat both the same way
+  // instead of letting the null through to the string checks below.
+  if (title === CreatureTitle.None || title === null) {
     return null;
   }
 
@@ -282,8 +287,12 @@ export const creatureTitleIcon = (title: CreatureTitle): string | null => {
   return null;
 };
 
-export const creatureTitleLabel = (title: CreatureTitle): string => {
-  if (title === CreatureTitle.None) {
+export const creatureTitleLabel = (title: CreatureTitle | null): string => {
+  // Same null-vs-None gap as creatureTitleIcon above - without this guard
+  // (title as string).split('_') below throws "Cannot read properties of
+  // null (reading 'split')" and crashes the whole Creatures page, since
+  // this runs inside a useMemo/.map render path with no error boundary.
+  if (title === CreatureTitle.None || title === null) {
     return '';
   }
 
