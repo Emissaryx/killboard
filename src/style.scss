@@ -449,6 +449,15 @@ td.scenariolist-score-destruction {
   outline-offset: 1px;
 }
 
+.class-activity-sparkline-bar-total {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.class-activity-trend-total-row {
+  border-top: 2px solid rgba(255, 255, 255, 0.25);
+  font-weight: bold;
+}
+
 .class-activity-sparkline-bar-order {
   background: rgb(12, 47, 158);
 }

@@ -2,10 +2,12 @@ import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ReactElement } from 'react';
+import clsx from 'clsx';
 import { Career } from '@/__generated__/graphql';
 import { assetUrl, careerIcon } from '@/utils';
 import { scenarioCareerName } from '@/components/scenario/scenarioRoles';
 import { ErrorMessage } from '@/components/global/ErrorMessage';
+import { SortConfigDirection, useSortableData } from '@/hooks/useSortableData';
 import { PeriodPicker, monthKeyForDate } from './PeriodPicker';
 import {
   type Period,
@@ -675,6 +677,45 @@ const formatCompactCount = (count: number): string =>
     maximumFractionDigits: 1,
   }).format(count);
 
+const TrendSparklineCell = ({
+  monthly,
+  maxMonthly,
+  months,
+  barColorClass,
+}: {
+  monthly: number[];
+  maxMonthly: number;
+  months: string[];
+  barColorClass: string;
+}): ReactElement => (
+  <div className="class-activity-sparkline">
+    {monthly.map((count, index) => (
+      <div className="class-activity-sparkline-col" key={months[index]}>
+        <span className="class-activity-sparkline-value">
+          {count > 0 ? formatCompactCount(count) : ''}
+        </span>
+        <div className="class-activity-sparkline-bar-track">
+          <span
+            className={[
+              'class-activity-sparkline-bar',
+              barColorClass,
+              index === months.length - 1
+                ? 'class-activity-sparkline-bar-current'
+                : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            style={{
+              height: `${(count / maxMonthly) * 100}%`,
+            }}
+            title={`${monthLabelForKey(months[index])}: ${count.toLocaleString()}`}
+          />
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
 const ClassActivityTrend = ({
   currentMonth,
 }: {
@@ -690,19 +731,6 @@ const ClassActivityTrend = ({
   );
   const months = trailingMonthKeys(endMonth, 12);
   const { loading, error, byMonth } = useClassActivityMonths(months);
-
-  if (error) {
-    return <ErrorMessage message={error.message} name={error.name} />;
-  }
-
-  if (loading) {
-    return (
-      <div className="scenario-window-loading">
-        <progress className="progress is-small is-primary" />
-        <strong>Loading last 12 months…</strong>
-      </div>
-    );
-  }
 
   const monthsWithData = months.filter(
     (month) => (byMonth[month]?.monthsWithData.length ?? 0) > 0,
@@ -726,10 +754,18 @@ const ClassActivityTrend = ({
     endMonth === currentMonth && endMonthCoverageSince != null;
   const isFullyTracked = monthsWithData.length === months.length;
 
-  const trendRows = CAREER_META.map((meta) => {
-    const monthly = months.map(
-      (month) => byMonth[month]?.byCareer[meta.career]?.count ?? 0,
-    );
+  // Shared by every per-class row and the "All classes" total row below -
+  // same average/vsAverage/in-progress-exclusion rules, just given a
+  // different `monthly` series to crunch.
+  const computeTrendStats = (
+    monthly: number[],
+  ): {
+    monthly: number[];
+    average: number;
+    currentCount: number;
+    vsAverage: number | null;
+    maxMonthly: number;
+  } => {
     const trackedCounts = months
       .map((month, index) => ({ month, count: monthly[index] }))
       .filter(({ month }) => monthsWithData.includes(month))
@@ -746,16 +782,58 @@ const ClassActivityTrend = ({
         ? null
         : ((currentCount - average) / average) * 100;
     const maxMonthly = Math.max(1, ...monthly);
+    return { monthly, average, currentCount, vsAverage, maxMonthly };
+  };
+
+  const unsortedTrendRows = CAREER_META.map((meta) => {
+    const monthly = months.map(
+      (month) => byMonth[month]?.byCareer[meta.career]?.count ?? 0,
+    );
     return {
       career: meta.career,
+      careerName: scenarioCareerName(meta.career),
       realm: meta.realm,
-      monthly,
-      average,
-      currentCount,
-      vsAverage,
-      maxMonthly,
+      ...computeTrendStats(monthly),
     };
-  }).toSorted((a, b) => b.currentCount - a.currentCount);
+  });
+
+  // Hooks must run unconditionally on every render (including the loading
+  // and error states below), so this is called up here rather than after
+  // the early returns further down.
+  const {
+    items: trendRows,
+    requestSort,
+    sortConfig,
+  } = useSortableData(unsortedTrendRows, {
+    direction: SortConfigDirection.descending,
+    key: 'currentCount',
+  });
+  const getSortClass = (key: string): string => {
+    if (!sortConfig || sortConfig.key !== key) {
+      return '';
+    }
+    return sortConfig.direction;
+  };
+
+  // Uses the worker's own per-month `total` (distinct active characters),
+  // not a sum of the per-career counts above - a character only has one
+  // career, so the two agree in practice, but `total` is the source of
+  // truth the Overview tab already uses for its own combined figure.
+  const totalMonthly = months.map((month) => byMonth[month]?.total ?? 0);
+  const totalRow = computeTrendStats(totalMonthly);
+
+  if (error) {
+    return <ErrorMessage message={error.message} name={error.name} />;
+  }
+
+  if (loading) {
+    return (
+      <div className="scenario-window-loading">
+        <progress className="progress is-small is-primary" />
+        <strong>Loading last 12 months…</strong>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -795,8 +873,18 @@ const ClassActivityTrend = ({
       <table className="table is-fullwidth class-activity-table">
         <thead>
           <tr>
-            <th>Class</th>
-            <th>Realm</th>
+            <th
+              className={clsx('is-clickable', getSortClass('careerName'))}
+              onClick={() => requestSort('careerName')}
+            >
+              Class
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('realm'))}
+              onClick={() => requestSort('realm')}
+            >
+              Realm
+            </th>
             <th>
               Trend (last 12 months)
               <div className="class-activity-sparkline-axis">
@@ -804,9 +892,24 @@ const ClassActivityTrend = ({
                 <span>{monthShortLabelForKey(months.at(-1) ?? endMonth)}</span>
               </div>
             </th>
-            <th>{monthLabelForKey(endMonth)}</th>
-            <th>{t('pages:classActivity.trendAverage')}</th>
-            <th>{t('pages:classActivity.trendVsAverage')}</th>
+            <th
+              className={clsx('is-clickable', getSortClass('currentCount'))}
+              onClick={() => requestSort('currentCount')}
+            >
+              {monthLabelForKey(endMonth)}
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('average'))}
+              onClick={() => requestSort('average')}
+            >
+              {t('pages:classActivity.trendAverage')}
+            </th>
+            <th
+              className={clsx('is-clickable', getSortClass('vsAverage'))}
+              onClick={() => requestSort('vsAverage')}
+            >
+              {t('pages:classActivity.trendVsAverage')}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -819,7 +922,7 @@ const ClassActivityTrend = ({
                   src={careerIcon(row.career)}
                   width={20}
                 />{' '}
-                {scenarioCareerName(row.career)}
+                {row.careerName}
               </td>
               <td
                 className={
@@ -831,39 +934,14 @@ const ClassActivityTrend = ({
                 {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
               </td>
               <td>
-                <div className="class-activity-sparkline">
-                  {row.monthly.map((count, index) => (
-                    <div
-                      className="class-activity-sparkline-col"
-                      key={months[index]}
-                    >
-                      <span className="class-activity-sparkline-value">
-                        {count > 0 ? formatCompactCount(count) : ''}
-                      </span>
-                      <div className="class-activity-sparkline-bar-track">
-                        <span
-                          className={[
-                            'class-activity-sparkline-bar',
-                            `class-activity-sparkline-bar-${
-                              row.realm === REALM_ORDER
-                                ? 'order'
-                                : 'destruction'
-                            }`,
-                            index === months.length - 1
-                              ? 'class-activity-sparkline-bar-current'
-                              : '',
-                          ]
-                            .filter(Boolean)
-                            .join(' ')}
-                          style={{
-                            height: `${(count / row.maxMonthly) * 100}%`,
-                          }}
-                          title={`${monthLabelForKey(months[index])}: ${count.toLocaleString()}`}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <TrendSparklineCell
+                  barColorClass={`class-activity-sparkline-bar-${
+                    row.realm === REALM_ORDER ? 'order' : 'destruction'
+                  }`}
+                  maxMonthly={row.maxMonthly}
+                  monthly={row.monthly}
+                  months={months}
+                />
               </td>
               <td>{row.currentCount.toLocaleString()}</td>
               <td>{row.average === 0 ? '—' : row.average.toFixed(1)}</td>
@@ -883,6 +961,37 @@ const ClassActivityTrend = ({
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="class-activity-trend-total-row">
+            <td>All classes</td>
+            <td>—</td>
+            <td>
+              <TrendSparklineCell
+                barColorClass="class-activity-sparkline-bar-total"
+                maxMonthly={totalRow.maxMonthly}
+                monthly={totalRow.monthly}
+                months={months}
+              />
+            </td>
+            <td>{totalRow.currentCount.toLocaleString()}</td>
+            <td>
+              {totalRow.average === 0 ? '—' : totalRow.average.toFixed(1)}
+            </td>
+            <td
+              className={
+                totalRow.vsAverage == null
+                  ? undefined
+                  : deltaClassName(totalRow.vsAverage)
+              }
+            >
+              {isEndMonthOngoing
+                ? 'in progress'
+                : totalRow.vsAverage == null
+                  ? '—'
+                  : `${totalRow.vsAverage > 0 ? '+' : ''}${totalRow.vsAverage.toFixed(0)}%`}
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </>
   );
