@@ -666,6 +666,88 @@ const useClassActivityMonths = (
   return state;
 };
 
+interface ClassActivityRoleRangeResponse {
+  from: string;
+  to: string;
+  total: number;
+  byRealmRole: Record<string, Record<string, number>>;
+  monthsWithRoleData: string[];
+  coverageSince: string | null;
+}
+
+// Same one-request-per-month shape as useClassActivityMonths above, just
+// against /class-activity-role-range instead of /class-activity-range.
+// Kept as a separate hook/endpoint rather than folding role data into the
+// existing response because role tracking was added later and its
+// backfill covers a much shorter window (ROLE_BACKFILL_MONTHS in the
+// Worker, currently 13 months) - monthsWithRoleData lets the frontend
+// distinguish "not backfilled yet" from "genuinely zero this month"
+// independently of the career data's own (longer) coverage.
+const useClassActivityRoleMonths = (
+  months: string[],
+): {
+  loading: boolean;
+  error?: Error;
+  byMonth: Record<string, ClassActivityRoleRangeResponse>;
+} => {
+  const [state, setState] = useState<{
+    loading: boolean;
+    error?: Error;
+    byMonth: Record<string, ClassActivityRoleRangeResponse>;
+  }>({ loading: true, byMonth: {} });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState((prev) => ({ ...prev, loading: true, error: undefined }));
+
+    const load = async (): Promise<void> => {
+      try {
+        const results = await Promise.all(
+          months.map(async (month) => {
+            const response = await fetch(
+              `${CLASS_ACTIVITY_WORKER_URL}/class-activity-role-range?from=${month}&to=${month}`,
+            );
+            const data =
+              (await response.json()) as ClassActivityRoleRangeResponse & {
+                error?: string;
+              };
+            if (!response.ok || data.error || !data.byRealmRole) {
+              throw new Error(
+                data.error ??
+                  `Class Activity Worker responded with ${response.status}`,
+              );
+            }
+            return [month, data] as const;
+          }),
+        );
+        if (cancelled) {
+          return;
+        }
+        setState({ loading: false, byMonth: Object.fromEntries(results) });
+      } catch (caughtError) {
+        if (!cancelled) {
+          setState((prev) => ({
+            ...prev,
+            loading: false,
+            error:
+              caughtError instanceof Error
+                ? caughtError
+                : new Error('Unable to load role activity.'),
+          }));
+        }
+      }
+    };
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [months.join(',')]);
+
+  return state;
+};
+
 // Shows each class's active-character count across the trailing 12
 // months plus its 12-month average, so a reviewer can tell whether the
 // current month is normal for that class or an outlier - something
@@ -1300,6 +1382,205 @@ const RealmClassCompositionTable = ({
   );
 };
 
+const ROLE_ORDER = ['TANK', 'DPS', 'HEALER'] as const;
+const ROLE_LABEL: Record<(typeof ROLE_ORDER)[number], string> = {
+  TANK: 'Tank',
+  DPS: 'DPS',
+  HEALER: 'Healer',
+};
+
+// Tank/DPS/Healer split within each realm, over the same trailing window
+// as everything else on this tab. This is the actual "is a DPS-specced
+// healer counted as DPS" feature - role comes from the Worker having
+// classified each Skirmish appearance by whether that character healed
+// or dealt more damage in it (see the ROLE TRACKING note in the Worker
+// source), not from a fixed career->role table, so a Zealot who nukes in
+// most of their games shows up mostly under DPS here.
+const RoleCompositionTable = ({
+  months,
+  endMonth,
+  byRoleMonth,
+  monthsWithRoleData,
+  isEndMonthOngoing,
+  realmMonthly,
+}: {
+  months: string[];
+  endMonth: string;
+  byRoleMonth: Record<string, ClassActivityRoleRangeResponse>;
+  monthsWithRoleData: string[];
+  isEndMonthOngoing: boolean;
+  realmMonthly: Record<0 | 1, number[]>;
+}): ReactElement => {
+  const { t } = useTranslation(['pages']);
+
+  const computeTrendStats = (
+    monthly: number[],
+  ): {
+    monthly: number[];
+    average: number;
+    currentCount: number;
+    vsAverage: number | null;
+    maxMonthly: number;
+  } => {
+    const trackedCounts = months
+      .map((month, index) => ({ month, count: monthly[index] }))
+      .filter(({ month }) => monthsWithRoleData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ count }) => count);
+    const average =
+      trackedCounts.length === 0
+        ? 0
+        : trackedCounts.reduce((sum, count) => sum + count, 0) /
+          trackedCounts.length;
+    const currentCount = monthly.at(-1) ?? 0;
+    const vsAverage =
+      average === 0 || isEndMonthOngoing
+        ? null
+        : ((currentCount - average) / average) * 100;
+    const maxMonthly = Math.max(1, ...monthly);
+    return { monthly, average, currentCount, vsAverage, maxMonthly };
+  };
+
+  const computeShareStats = (
+    monthly: number[],
+    denominatorMonthly: number[],
+  ): {
+    currentShare: number;
+    shareVsAverage: number | null;
+  } => {
+    const shareMonthly = monthly.map((count, index) =>
+      denominatorMonthly[index] > 0
+        ? (count / denominatorMonthly[index]) * 100
+        : 0,
+    );
+    const trackedShares = months
+      .map((month, index) => ({ month, share: shareMonthly[index] }))
+      .filter(({ month }) => monthsWithRoleData.includes(month))
+      .filter(({ month }) => !(isEndMonthOngoing && month === endMonth))
+      .map(({ share }) => share);
+    const shareAverage =
+      trackedShares.length === 0
+        ? 0
+        : trackedShares.reduce((sum, share) => sum + share, 0) /
+          trackedShares.length;
+    const currentShare = shareMonthly.at(-1) ?? 0;
+    const shareVsAverage =
+      trackedShares.length === 0 || isEndMonthOngoing
+        ? null
+        : currentShare - shareAverage;
+    return { currentShare, shareVsAverage };
+  };
+
+  const rows = ([0, 1] as const).flatMap((realm) =>
+    ROLE_ORDER.map((role) => {
+      const monthly = months.map(
+        (month) => byRoleMonth[month]?.byRealmRole[String(realm)]?.[role] ?? 0,
+      );
+      return {
+        key: `${realm}-${role}`,
+        realm,
+        role,
+        label: ROLE_LABEL[role],
+        textClass:
+          realm === REALM_ORDER
+            ? 'scenario-breakdown-order'
+            : 'scenario-breakdown-destruction',
+        barColorClass:
+          realm === REALM_ORDER
+            ? 'class-activity-sparkline-bar-order'
+            : 'class-activity-sparkline-bar-destruction',
+        ...computeTrendStats(monthly),
+        ...computeShareStats(monthly, realmMonthly[realm]),
+      };
+    }),
+  );
+
+  const isRoleFullyTracked = monthsWithRoleData.length === months.length;
+
+  return (
+    <>
+      <h3 className="title is-6 class-activity-composition-title">
+        Role composition (Tank / DPS / Healer)
+      </h3>
+      {!isRoleFullyTracked && (
+        <p className="scenario-window-loading" style={{ opacity: 0.7 }}>
+          Only {monthsWithRoleData.length} of {months.length} months have role
+          data so far - role tracking (healing vs damage per Skirmish, so
+          DPS-specced healers count as DPS) was added more recently than
+          class/realm tracking and is still backfilling history.
+        </p>
+      )}
+      <table className="table is-fullwidth class-activity-table">
+        <thead>
+          <tr>
+            <th>Realm</th>
+            <th>Role</th>
+            <th>
+              Trend (last 12 months)
+              <div className="class-activity-sparkline-axis">
+                <span>{monthShortLabelForKey(months[0])}</span>
+                <span>{monthShortLabelForKey(months.at(-1) ?? endMonth)}</span>
+              </div>
+            </th>
+            <th>{monthLabelForKey(endMonth)}</th>
+            <th>{t('pages:classActivity.trendAverage')}</th>
+            <th>{t('pages:classActivity.trendVsAverage')}</th>
+            <th>% of realm</th>
+            <th>Share vs avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key}>
+              <td className={row.textClass}>
+                {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
+              </td>
+              <td>{row.label}</td>
+              <td>
+                <TrendSparklineCell
+                  barColorClass={row.barColorClass}
+                  maxMonthly={row.maxMonthly}
+                  monthly={row.monthly}
+                  months={months}
+                />
+              </td>
+              <td>{row.currentCount.toLocaleString()}</td>
+              <td>{row.average === 0 ? '—' : row.average.toFixed(1)}</td>
+              <td
+                className={
+                  row.vsAverage == null
+                    ? undefined
+                    : deltaClassName(row.vsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.vsAverage == null
+                    ? '—'
+                    : `${row.vsAverage > 0 ? '+' : ''}${row.vsAverage.toFixed(0)}%`}
+              </td>
+              <td>{row.currentShare.toFixed(1)}%</td>
+              <td
+                className={
+                  row.shareVsAverage == null
+                    ? undefined
+                    : deltaClassName(row.shareVsAverage)
+                }
+              >
+                {isEndMonthOngoing
+                  ? 'in progress'
+                  : row.shareVsAverage == null
+                    ? '—'
+                    : `${row.shareVsAverage > 0 ? '+' : ''}${row.shareVsAverage.toFixed(1)}pp`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+};
+
 const ClassActivityRealmTrend = ({
   currentMonth,
 }: {
@@ -1311,9 +1592,14 @@ const ClassActivityRealmTrend = ({
   );
   const months = trailingMonthKeys(endMonth, 12);
   const { loading, error, byMonth } = useClassActivityMonths(months);
+  const { loading: roleLoading, byMonth: byRoleMonth } =
+    useClassActivityRoleMonths(months);
 
   const monthsWithData = months.filter(
     (month) => (byMonth[month]?.monthsWithData.length ?? 0) > 0,
+  );
+  const monthsWithRoleData = months.filter(
+    (month) => byRoleMonth[month]?.monthsWithRoleData.includes(month) ?? false,
   );
   const endMonthCoverageSince = byMonth[endMonth]?.coverageSince ?? null;
   const isEndMonthOngoing =
@@ -1549,6 +1835,21 @@ const ClassActivityRealmTrend = ({
         monthsWithData={monthsWithData}
         title="Destruction composition"
       />
+      {roleLoading ? (
+        <div className="scenario-window-loading">
+          <progress className="progress is-small is-primary" />
+          <strong>Loading role data…</strong>
+        </div>
+      ) : (
+        <RoleCompositionTable
+          byRoleMonth={byRoleMonth}
+          endMonth={endMonth}
+          isEndMonthOngoing={isEndMonthOngoing}
+          months={months}
+          monthsWithRoleData={monthsWithRoleData}
+          realmMonthly={{ 0: orderMonthly, 1: destructionMonthly }}
+        />
+      )}
     </>
   );
 };
