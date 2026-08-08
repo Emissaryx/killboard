@@ -505,7 +505,25 @@ const ClassActivityCompare = ({
     buildYtdPeriod(currentYear - 1, currentMonth),
   ]);
 
-  const results = useClassActivityRanges(periods);
+  const rangeResults = useClassActivityRanges(periods);
+  // useClassActivityRanges' state array only catches up to `periods`'
+  // length after its effect re-runs on the next tick, so for one render
+  // right after Add/Remove period, `rangeResults.length` can still be the
+  // *previous* period count. Indexing straight into `rangeResults` in
+  // that gap crashed the page (reading `.total` off `undefined`) - this
+  // pads/truncates it to exactly `periods.length` on every render instead,
+  // synthesizing a "still loading" placeholder for whatever hasn't
+  // arrived yet rather than assuming an entry exists for every period.
+  const results = periods.map(
+    (_, index) =>
+      rangeResults[index] ?? {
+        loading: true,
+        rows: [],
+        total: 0,
+        monthsWithData: [],
+        coverageSince: null,
+      },
+  );
   const loading = results.some((result) => result.loading);
 
   const firstError = results.find((result) => result.error)?.error;
