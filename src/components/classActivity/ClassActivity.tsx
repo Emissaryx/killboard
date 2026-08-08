@@ -400,7 +400,15 @@ const deltaClassName = (change: number): string | undefined => {
   return undefined;
 };
 
-const MAX_COMPARE_PERIODS = 4;
+// Capped at 3, not some higher round number: periodUtils.EARLIEST_YEAR
+// (2024) is the earliest year the picker (and the backfill) support, and
+// with the real current year at 2026 that's only ever 3 distinct YTD
+// years to compare (2026/2025/2024) - a 4th Add would default to a year
+// below EARLIEST_YEAR, which the Year <select> has no matching <option>
+// for and silently falls back to displaying its first option instead
+// (misleadingly showing a second "2026" row while the underlying period
+// was actually 2023). Capping here avoids ever landing in that state.
+const MAX_COMPARE_PERIODS = 3;
 
 // Same shape as useClassActivityRange above, but for a *list* of periods
 // whose length changes at runtime (the Compare tab's Add/Remove period
