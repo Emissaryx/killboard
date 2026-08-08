@@ -13,8 +13,10 @@ import { PeriodPicker, monthKeyForDate } from './PeriodPicker';
 import {
   type Period,
   buildMonthPeriod,
+  buildYtdPeriod,
   monthLabelForKey,
   monthShortLabelForKey,
+  parseMonthKey,
   previousMonthKey,
   trailingMonthKeys,
 } from './periodUtils';
@@ -398,9 +400,92 @@ const deltaClassName = (change: number): string | undefined => {
   return undefined;
 };
 
-const oneYearBeforeMonth = (month: string): Period => {
-  const [year, monthNum] = month.split('-').map(Number);
-  return buildMonthPeriod(`${year - 1}-${String(monthNum).padStart(2, '0')}`);
+const MAX_COMPARE_PERIODS = 4;
+
+// Same shape as useClassActivityRange above, but for a *list* of periods
+// whose length changes at runtime (the Compare tab's Add/Remove period
+// buttons). Calling useClassActivityRange once per period inside a .map()
+// would violate the rules of hooks the moment that list's length changes
+// between renders - the number of hook calls has to stay the same on
+// every render. This is one hook with one effect that fetches every
+// period in parallel and returns one state array instead, so the hook
+// call count never depends on how many periods are being compared.
+const useClassActivityRanges = (periods: Period[]): RangeState[] => {
+  const idleState = (): RangeState => ({
+    loading: true,
+    rows: [],
+    total: 0,
+    monthsWithData: [],
+    coverageSince: null,
+  });
+  const [states, setStates] = useState<RangeState[]>(() =>
+    periods.map(idleState),
+  );
+
+  // periods' array identity changes every render (it's rebuilt by .map/
+  // state setters), so it can't be the effect dependency directly without
+  // refetching on every render - the actual [from, to] values are what
+  // should trigger a refetch, so that's what's compared here instead.
+  const key = periods.map((period) => `${period.from}|${period.to}`).join(',');
+
+  useEffect(() => {
+    let cancelled = false;
+    setStates(periods.map(idleState));
+
+    const loadOne = async (period: Period): Promise<RangeState> => {
+      try {
+        const response = await fetch(
+          `${CLASS_ACTIVITY_WORKER_URL}/class-activity-range?from=${period.from}&to=${period.to}`,
+        );
+        const data = (await response.json()) as ClassActivityRangeResponse & {
+          error?: string;
+        };
+        if (!response.ok || data.error || !data.byCareer) {
+          throw new Error(
+            data.error ??
+              `Class Activity Worker responded with ${response.status}`,
+          );
+        }
+        return {
+          loading: false,
+          rows: CAREER_META.map((meta) => ({
+            career: meta.career,
+            realm: meta.realm,
+            count: data.byCareer[meta.career]?.count ?? 0,
+          })),
+          total: data.total,
+          monthsWithData: data.monthsWithData,
+          coverageSince: data.coverageSince,
+        };
+      } catch (caughtError) {
+        return {
+          loading: false,
+          rows: [],
+          total: 0,
+          monthsWithData: [],
+          coverageSince: null,
+          error:
+            caughtError instanceof Error
+              ? caughtError
+              : new Error('Unable to load character activity.'),
+        };
+      }
+    };
+
+    void (async () => {
+      const results = await Promise.all(periods.map(loadOne));
+      if (!cancelled) {
+        setStates(results);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return states;
 };
 
 const ClassActivityCompare = ({
@@ -408,182 +493,211 @@ const ClassActivityCompare = ({
 }: {
   currentMonth: string;
 }): ReactElement => {
-  const [periodA, setPeriodA] = useState<Period>(() =>
-    buildMonthPeriod(currentMonth),
-  );
-  const [periodB, setPeriodB] = useState<Period>(() =>
-    oneYearBeforeMonth(currentMonth),
-  );
+  const { t } = useTranslation(['pages']);
+  const currentYear = parseMonthKey(currentMonth).year;
+  // Defaults to "year to date" for this year vs last year rather than the
+  // single-month comparison this tab used to default to - that's what
+  // people actually reach for here (e.g. "have we had more active
+  // characters so far this year than by this point last year?"), and Add
+  // period below lets that extend to three (or more) years side by side.
+  const [periods, setPeriods] = useState<Period[]>(() => [
+    buildYtdPeriod(currentYear, currentMonth),
+    buildYtdPeriod(currentYear - 1, currentMonth),
+  ]);
 
-  const a = useClassActivityRange(periodA);
-  const b = useClassActivityRange(periodB);
+  const results = useClassActivityRanges(periods);
+  const loading = results.some((result) => result.loading);
 
-  if (a.error || b.error) {
-    const err = (a.error ?? b.error) as Error;
-    return <ErrorMessage message={err.message} name={err.name} />;
+  const firstError = results.find((result) => result.error)?.error;
+  if (firstError) {
+    return <ErrorMessage message={firstError.message} name={firstError.name} />;
   }
 
-  const rowsA = CAREER_META.map((meta) => ({
-    career: meta.career,
-    realm: meta.realm,
-    count: a.rows.find((row) => row.career === meta.career)?.count ?? 0,
-  }));
-  const rowsB = CAREER_META.map((meta) => ({
-    career: meta.career,
-    realm: meta.realm,
-    count: b.rows.find((row) => row.career === meta.career)?.count ?? 0,
-  }));
-
-  const loading = a.loading || b.loading;
-
-  const orderA = rowsA
-    .filter((r) => r.realm === REALM_ORDER)
-    .toSorted((x, y) => y.count - x.count);
-  const destA = rowsA
-    .filter((r) => r.realm === REALM_DESTRUCTION)
-    .toSorted((x, y) => y.count - x.count);
-  const orderB = rowsB
-    .filter((r) => r.realm === REALM_ORDER)
-    .toSorted((x, y) => y.count - x.count);
-  const destB = rowsB
-    .filter((r) => r.realm === REALM_DESTRUCTION)
-    .toSorted((x, y) => y.count - x.count);
-  const maxCount = Math.max(
-    1,
-    ...rowsA.map((r) => r.count),
-    ...rowsB.map((r) => r.count),
-  );
-
-  const deltaRows = CAREER_META.map((meta) => {
-    const countA = rowsA.find((r) => r.career === meta.career)?.count ?? 0;
-    const countB = rowsB.find((r) => r.career === meta.career)?.count ?? 0;
-    const change = countA - countB;
-    const changePercent = countB === 0 ? null : (change / countB) * 100;
-    return {
+  const perPeriodRows = results.map((result) =>
+    CAREER_META.map((meta) => ({
       career: meta.career,
       realm: meta.realm,
-      countA,
-      countB,
-      change,
-      changePercent,
-    };
-  }).toSorted((x, y) => Math.abs(y.change) - Math.abs(x.change));
+      count: result.rows.find((row) => row.career === meta.career)?.count ?? 0,
+    })),
+  );
+  const maxCount = Math.max(1, ...perPeriodRows.flat().map((row) => row.count));
+
+  // "Change" always compares the first and last periods in the list (in
+  // whatever order they were added) - a direct generalization of the
+  // original two-period A-minus-B column. With three or more periods, the
+  // in-between ones still get their own raw-count columns; the single
+  // delta column just needs two fixed endpoints to stay meaningful rather
+  // than trying to show every pairwise combination at once.
+  const firstRows = perPeriodRows[0] ?? [];
+  const lastRows = perPeriodRows[perPeriodRows.length - 1] ?? [];
+  const deltaByCareer = new Map(
+    CAREER_META.map((meta) => {
+      const countFirst =
+        firstRows.find((r) => r.career === meta.career)?.count ?? 0;
+      const countLast =
+        lastRows.find((r) => r.career === meta.career)?.count ?? 0;
+      const change = countLast - countFirst;
+      const changePercent =
+        countFirst === 0 ? null : (change / countFirst) * 100;
+      return [meta.career, { change, changePercent }] as const;
+    }),
+  );
+  const sortedCareerMeta = CAREER_META.toSorted(
+    (x, y) =>
+      Math.abs(deltaByCareer.get(y.career)?.change ?? 0) -
+      Math.abs(deltaByCareer.get(x.career)?.change ?? 0),
+  );
+
+  const canAddPeriod = periods.length < MAX_COMPARE_PERIODS;
+  const canRemovePeriod = periods.length > 2;
 
   return (
     <>
-      <div className="class-activity-toolbar">
-        <PeriodPicker
-          currentMonth={currentMonth}
-          idPrefix="period-a"
-          value={periodA}
-          onChange={setPeriodA}
-        />
-      </div>
-      <div className="class-activity-toolbar mb-4">
-        <PeriodPicker
-          currentMonth={currentMonth}
-          idPrefix="period-b"
-          value={periodB}
-          onChange={setPeriodB}
-        />
-      </div>
+      {periods.map((period, index) => (
+        <div className="class-activity-toolbar mb-2" key={index}>
+          <PeriodPicker
+            currentMonth={currentMonth}
+            idPrefix={`period-${index}`}
+            value={period}
+            onChange={(next) => {
+              setPeriods((prev) =>
+                prev.map((p, i) => (i === index ? next : p)),
+              );
+            }}
+          />
+          {canRemovePeriod && (
+            <button
+              aria-label={t('pages:classActivity.removePeriod')}
+              className="delete"
+              onClick={() => {
+                setPeriods((prev) => prev.filter((_, i) => i !== index));
+              }}
+              type="button"
+            />
+          )}
+        </div>
+      ))}
+      {canAddPeriod && (
+        <button
+          className="button is-small mb-4"
+          onClick={() => {
+            setPeriods((prev) => [
+              ...prev,
+              buildYtdPeriod(currentYear - prev.length, currentMonth),
+            ]);
+          }}
+          type="button"
+        >
+          + {t('pages:classActivity.addPeriod')}
+        </button>
+      )}
       {loading ? (
         <div className="scenario-window-loading">
           <progress className="progress is-small is-primary" />
           <strong>
-            Loading {periodA.label} vs {periodB.label}…
+            Loading {periods.map((period) => period.label).join(' vs ')}…
           </strong>
         </div>
       ) : (
         <>
           <div className="compare-columns">
-            <div>
-              <div className="compare-period-heading">
-                {periodA.label} — {a.total.toLocaleString()} active
-                {a.monthsWithData.length === 0 && ' (no data recorded)'}
-              </div>
-              <div className="class-activity-grid">
-                <RealmPanel
-                  careers={orderA}
-                  maxCount={maxCount}
-                  realmName="Order"
-                  total={orderA.reduce((sum, r) => sum + r.count, 0)}
-                />
-                <RealmPanel
-                  careers={destA}
-                  maxCount={maxCount}
-                  realmName="Destruction"
-                  total={destA.reduce((sum, r) => sum + r.count, 0)}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="compare-period-heading">
-                {periodB.label} — {b.total.toLocaleString()} active
-                {b.monthsWithData.length === 0 && ' (no data recorded)'}
-              </div>
-              <div className="class-activity-grid">
-                <RealmPanel
-                  careers={orderB}
-                  maxCount={maxCount}
-                  realmName="Order"
-                  total={orderB.reduce((sum, r) => sum + r.count, 0)}
-                />
-                <RealmPanel
-                  careers={destB}
-                  maxCount={maxCount}
-                  realmName="Destruction"
-                  total={destB.reduce((sum, r) => sum + r.count, 0)}
-                />
-              </div>
-            </div>
+            {periods.map((period, index) => {
+              const rows = perPeriodRows[index] ?? [];
+              const order = rows
+                .filter((r) => r.realm === REALM_ORDER)
+                .toSorted((x, y) => y.count - x.count);
+              const dest = rows
+                .filter((r) => r.realm === REALM_DESTRUCTION)
+                .toSorted((x, y) => y.count - x.count);
+              const result = results[index];
+              return (
+                <div key={index}>
+                  <div className="compare-period-heading">
+                    {period.label} — {result.total.toLocaleString()} active
+                    {result.monthsWithData.length === 0 &&
+                      ' (no data recorded)'}
+                  </div>
+                  <div className="class-activity-grid">
+                    <RealmPanel
+                      careers={order}
+                      maxCount={maxCount}
+                      realmName="Order"
+                      total={order.reduce((sum, r) => sum + r.count, 0)}
+                    />
+                    <RealmPanel
+                      careers={dest}
+                      maxCount={maxCount}
+                      realmName="Destruction"
+                      total={dest.reduce((sum, r) => sum + r.count, 0)}
+                    />
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <table className="table is-fullwidth class-activity-table">
             <thead>
               <tr>
                 <th>Class</th>
                 <th>Realm</th>
-                <th>{periodA.label}</th>
-                <th>{periodB.label}</th>
-                <th>Change</th>
+                {periods.map((period, index) => (
+                  <th key={index}>{period.label}</th>
+                ))}
+                {periods.length >= 2 && (
+                  <th>
+                    {t('pages:classActivity.change')} (
+                    {periods[periods.length - 1].label} vs {periods[0].label})
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {deltaRows.map((row) => (
-                <tr key={row.career}>
-                  <td>
-                    <img
-                      alt={row.career}
-                      height={20}
-                      src={careerIcon(row.career)}
-                      width={20}
-                    />{' '}
-                    {scenarioCareerName(row.career)}
-                  </td>
-                  <td
-                    className={
-                      row.realm === REALM_ORDER
-                        ? 'scenario-breakdown-order'
-                        : 'scenario-breakdown-destruction'
-                    }
-                  >
-                    {row.realm === REALM_ORDER ? 'Order' : 'Destruction'}
-                  </td>
-                  <td>{row.countA.toLocaleString()}</td>
-                  <td>{row.countB.toLocaleString()}</td>
-                  <td className={deltaClassName(row.change)}>
-                    {row.change > 0 ? '+' : ''}
-                    {row.change.toLocaleString()}
-                    {row.changePercent != null && (
-                      <>
-                        {' '}
-                        ({row.change > 0 ? '+' : ''}
-                        {row.changePercent.toFixed(0)}%)
-                      </>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {sortedCareerMeta.map((meta) => {
+                const delta = deltaByCareer.get(meta.career) ?? {
+                  change: 0,
+                  changePercent: null,
+                };
+                return (
+                  <tr key={meta.career}>
+                    <td>
+                      <img
+                        alt={meta.career}
+                        height={20}
+                        src={careerIcon(meta.career)}
+                        width={20}
+                      />{' '}
+                      {scenarioCareerName(meta.career)}
+                    </td>
+                    <td
+                      className={
+                        meta.realm === REALM_ORDER
+                          ? 'scenario-breakdown-order'
+                          : 'scenario-breakdown-destruction'
+                      }
+                    >
+                      {meta.realm === REALM_ORDER ? 'Order' : 'Destruction'}
+                    </td>
+                    {perPeriodRows.map((rows, index) => (
+                      <td key={index}>
+                        {(
+                          rows.find((r) => r.career === meta.career)?.count ?? 0
+                        ).toLocaleString()}
+                      </td>
+                    ))}
+                    <td className={deltaClassName(delta.change)}>
+                      {delta.change > 0 ? '+' : ''}
+                      {delta.change.toLocaleString()}
+                      {delta.changePercent != null && (
+                        <>
+                          {' '}
+                          ({delta.change > 0 ? '+' : ''}
+                          {delta.changePercent.toFixed(0)}%)
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </>

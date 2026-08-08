@@ -9,6 +9,7 @@ import {
   buildQuarterPeriod,
   buildTrailing12Period,
   buildYearPeriod,
+  buildYtdPeriod,
   monthKey,
   parseMonthKey,
 } from './periodUtils';
@@ -64,6 +65,10 @@ export const PeriodPicker = ({
       }
       case 'trailing12': {
         onChange(buildTrailing12Period(currentMonth));
+        return;
+      }
+      case 'ytd': {
+        onChange(buildYtdPeriod(year, currentMonth));
       }
     }
   };
@@ -82,11 +87,14 @@ export const PeriodPicker = ({
           >
             <option value="month">{t('pages:classActivity.month')}</option>
             <option value="quarter">{t('pages:classActivity.quarter')}</option>
-            <option value="halfYear">{t('pages:classActivity.halfYear')}</option>
+            <option value="halfYear">
+              {t('pages:classActivity.halfYear')}
+            </option>
             <option value="year">{t('pages:classActivity.year')}</option>
             <option value="trailing12">
               {t('pages:classActivity.trailing12Months')}
             </option>
+            <option value="ytd">{t('pages:classActivity.ytd')}</option>
           </select>
         </div>
       </label>
@@ -116,7 +124,11 @@ export const PeriodPicker = ({
                 value={value.year}
                 onChange={(event) => {
                   onChange(
-                    buildQuarterPeriod(Number(event.target.value), value.segment || 1, currentMonth),
+                    buildQuarterPeriod(
+                      Number(event.target.value),
+                      value.segment || 1,
+                      currentMonth,
+                    ),
                   );
                 }}
               >
@@ -134,7 +146,13 @@ export const PeriodPicker = ({
               <select
                 value={value.segment}
                 onChange={(event) => {
-                  onChange(buildQuarterPeriod(value.year, Number(event.target.value), currentMonth));
+                  onChange(
+                    buildQuarterPeriod(
+                      value.year,
+                      Number(event.target.value),
+                      currentMonth,
+                    ),
+                  );
                 }}
               >
                 {QUARTERS.map((quarter) => (
@@ -157,7 +175,11 @@ export const PeriodPicker = ({
                 value={value.year}
                 onChange={(event) => {
                   onChange(
-                    buildHalfYearPeriod(Number(event.target.value), value.segment || 1, currentMonth),
+                    buildHalfYearPeriod(
+                      Number(event.target.value),
+                      value.segment || 1,
+                      currentMonth,
+                    ),
                   );
                 }}
               >
@@ -175,7 +197,13 @@ export const PeriodPicker = ({
               <select
                 value={value.segment}
                 onChange={(event) => {
-                  onChange(buildHalfYearPeriod(value.year, Number(event.target.value), currentMonth));
+                  onChange(
+                    buildHalfYearPeriod(
+                      value.year,
+                      Number(event.target.value),
+                      currentMonth,
+                    ),
+                  );
                 }}
               >
                 {HALVES.map((half) => (
@@ -196,7 +224,31 @@ export const PeriodPicker = ({
             <select
               value={value.year}
               onChange={(event) => {
-                onChange(buildYearPeriod(Number(event.target.value), currentMonth));
+                onChange(
+                  buildYearPeriod(Number(event.target.value), currentMonth),
+                );
+              }}
+            >
+              {years.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
+        </label>
+      )}
+
+      {value.granularity === 'ytd' && (
+        <label>
+          <span>Year</span>
+          <div className="select">
+            <select
+              value={value.year}
+              onChange={(event) => {
+                onChange(
+                  buildYtdPeriod(Number(event.target.value), currentMonth),
+                );
               }}
             >
               {years.map((year) => (
@@ -214,4 +266,5 @@ export const PeriodPicker = ({
 
 // Re-exported so callers that just need "what month key is 'now'" don't
 // have to import date-fns directly for it.
-export const monthKeyForDate = (date: Date): string => monthKey(date.getFullYear(), date.getMonth() + 1);
+export const monthKeyForDate = (date: Date): string =>
+  monthKey(date.getFullYear(), date.getMonth() + 1);

@@ -10,7 +10,8 @@ export type Granularity =
   | 'quarter'
   | 'halfYear'
   | 'year'
-  | 'trailing12';
+  | 'trailing12'
+  | 'ytd';
 
 export interface Period {
   granularity: Granularity;
@@ -132,6 +133,37 @@ export const buildYearPeriod = (year: number, currentMonth: string): Period => {
     from,
     to,
     label: String(year),
+  };
+};
+
+// "Year to date" - Jan 1 through whatever month currentMonth is on, for
+// *any* selected year, not just the real current year. That's the whole
+// point: picking "YTD 2025" or "YTD 2024" applies the exact same Jan-
+// through-August (or whatever month "now" is) cutoff a past year gets as
+// "YTD 2026" does for the real current year, so multiple years' YTD
+// figures are actually comparable side by side instead of an odd partial
+// current year against full prior years. Data is only tracked at monthly
+// granularity, so this can't match an exact day-of-month cutoff (e.g.
+// "through Aug 8") - it's through the end of whatever the current
+// *month* is, which slightly overstates past years relative to the real
+// current year's still-in-progress month. That's the same trade-off
+// buildTrailing12Period already makes for the same reason.
+export const buildYtdPeriod = (year: number, currentMonth: string): Period => {
+  const { month: currentMonthNum } = parseMonthKey(currentMonth);
+  const from = monthKey(year, 1);
+  const to = monthKey(year, currentMonthNum);
+  const monthName = (month: number): string =>
+    format(new Date(year, month - 1, 1), 'MMM');
+  return {
+    granularity: 'ytd',
+    year,
+    segment: 0,
+    from,
+    to,
+    label:
+      currentMonthNum === 1
+        ? `${monthName(1)} ${year}`
+        : `${monthName(1)}–${monthName(currentMonthNum)} ${year}`,
   };
 };
 
