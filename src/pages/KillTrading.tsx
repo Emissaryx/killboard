@@ -686,7 +686,7 @@ export const KillTrading = (): ReactElement => {
                             )}
                           {(flag.details.rrGapKillCount ?? 0) > 0 && (
                             <span
-                              className="tag is-black is-light is-size-7 mt-1"
+                              className="tag kill-trading-rr-gap is-size-7 mt-1"
                               title="At least one kill in this group had a low-RR killer against a much higher-RR victim - adds a flat +100 to score"
                             >
                               low RR vs high RR ({flag.details.rrGapKillCount})
