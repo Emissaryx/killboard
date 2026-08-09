@@ -357,7 +357,10 @@ export const KillTrading = (): ReactElement => {
 
   return (
     <div className="container is-max-widescreen mt-2">
-      <h1 className="title is-4">Kill Trading / Farming Review</h1>
+      <div className="is-flex is-justify-content-space-between is-align-items-center mb-2">
+        <h1 className="title is-4 mb-0">Kill Trading / Farming Review</h1>
+        <button type="button" className="button is-small is-primary" onClick={reload}><span className="icon"><i className="fas fa-rotate" /></span><span>Refresh detector</span></button>
+      </div>
       <p className="subtitle is-6">
         Not linked anywhere in the site nav - this page only exists at this URL.
         Flags below are automated pattern matches, not proof of cheating; use
@@ -410,7 +413,7 @@ export const KillTrading = (): ReactElement => {
                   <li>
                     Status:{' '}
                     {status.complete
-                      ? 'complete (reached January 2024)'
+                      ? `complete (reached ${new Date(status.target).toLocaleDateString()})`
                       : `in progress, ${backfillProgressPercent(status)}% of the way back to ${new Date(status.target).toLocaleDateString()}`}
                   </li>
                   <li>
@@ -419,6 +422,7 @@ export const KillTrading = (): ReactElement => {
                   </li>
                   <li>Last backfill tick: {formatDate(status.lastRunAt)}</li>
                   <li>Last live tick: {formatDate(status.liveLastRunAt)}</li>
+                  <li>Live kills evaluated through: {formatDate(status.liveCursor)}</li>
                 </ul>
               </div>
             </>
