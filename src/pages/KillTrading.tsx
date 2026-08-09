@@ -369,7 +369,7 @@ export const KillTrading = (): ReactElement => {
     <div className="container is-max-widescreen mt-2">
       <div className="is-flex is-justify-content-space-between is-align-items-center mb-2">
         <h1 className="title is-4 mb-0">Kill Trading / Farming Review</h1>
-        <button type="button" className="button is-small is-primary" onClick={reload}><span className="icon"><i className="fas fa-rotate" /></span><span>Refresh detector</span></button>
+        <button type="button" className="button is-small is-primary" onClick={reload}><span className="icon"><i className="fas fa-rotate" /></span><span>Refresh results</span></button>
       </div>
       <p className="subtitle is-6">
         Not linked anywhere in the site nav - this page only exists at this URL.
