@@ -234,7 +234,7 @@ export const KillTrading = (): ReactElement => {
     sortConfig,
   } = useSortableData(filteredFlags ?? [], {
     direction: SortConfigDirection.descending,
-    key: 'score',
+    key: 'windowEnd',
   });
 
   const getSortClass = (key: string): string => {
@@ -624,7 +624,7 @@ export const KillTrading = (): ReactElement => {
                         )}
                         onClick={() => requestSort('lastSeen')}
                       >
-                        Last seen
+                        Last detected
                       </th>
                       <th
                         className={clsx(
