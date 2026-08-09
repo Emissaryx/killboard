@@ -287,7 +287,7 @@ export const KillTrading = (): ReactElement => {
       ids.forEach((id) => next.add(id));
       return next;
     });
-    Promise.allSettled(
+    void Promise.allSettled(
       ids.map((id) =>
         fetch(`${CATALOG_BASE_URL}/kill-flags/${id}`, {
           method: 'PATCH',

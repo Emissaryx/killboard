@@ -52,6 +52,7 @@
     "lint": "oxlint --type-aware src",
     "lint:fix": "oxlint --type-aware --fix src",
     "codegen": "graphql-codegen",
+    "codegen:check": "npm run codegen && git diff --exit-code -- src/__generated__",
     "codegen-watch": "graphql-codegen -w"
   },
   "browserslist": {

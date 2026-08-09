@@ -4,6 +4,8 @@ A killboard and statistics frontend for [Return of Reckoning](https://www.return
 
 Live API: `https://production-api.waremu.com/graphql`
 
+Emissary-owned contributions are covered by `EMISSARY_LICENSE.md`. Existing upstream and third-party material retains its own ownership and licensing. See `CONTRIBUTING.md` and `EMISSARY_CONTRIBUTIONS.md` before preparing changes for upstream reuse.
+
 ## Tech stack
 
 - [Vite](https://vitejs.dev/) + React 19 + TypeScript
@@ -32,6 +34,7 @@ npm start          # dev server on http://localhost:3000
 | `npm run lint:fix` | Same, auto-fixing where possible |
 | `npm test` | Full gate: `tsc -p .` typecheck → `vite build` → oxlint |
 | `npm run codegen` | Regenerate `src/__generated__/` from the live remote schema |
+| `npm run codegen:check` | Regenerate types and fail if committed GraphQL output is stale |
 | `npm run codegen-watch` | Same, in watch mode |
 
 Run `npm run codegen` after adding or editing any `gql` template — generated types live under `src/__generated__/` and are committed.
