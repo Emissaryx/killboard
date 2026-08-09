@@ -96,7 +96,7 @@ export const KillTrading = (): ReactElement => {
   const [showDismissed, setShowDismissed] = useState(false);
   const [hideReviewed, setHideReviewed] = useState(false);
   const [hideBanned, setHideBanned] = useState(true);
-  const [minScore, setMinScore] = useState(50);
+  const [minScore, setMinScore] = useState(0);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   // Rows checked for a bulk action (e.g. "mark reviewed" across a batch
