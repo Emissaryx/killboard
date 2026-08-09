@@ -94,7 +94,7 @@ export const KillTrading = (): ReactElement => {
     'all' | 'farming' | 'trading'
   >('farming');
   const [showDismissed, setShowDismissed] = useState(false);
-  const [hideReviewed, setHideReviewed] = useState(true);
+  const [hideReviewed, setHideReviewed] = useState(false);
   const [hideBanned, setHideBanned] = useState(true);
   const [minScore, setMinScore] = useState(50);
   const [reloadToken, setReloadToken] = useState(0);
