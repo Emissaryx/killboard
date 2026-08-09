@@ -14,6 +14,16 @@ import { SortConfigDirection, useSortableData } from '@/hooks/useSortableData';
 // produced (a solo-kills backfill walking back to 2024-01-01, plus a
 // live check every 5 minutes).
 const CATALOG_BASE_URL = 'https://killboard-catalog.tcates79.workers.dev';
+const formatDateInput = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+const DEFAULT_DATE_TO = formatDateInput(new Date());
+const DEFAULT_DATE_FROM = formatDateInput(
+  new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+);
 
 interface KillFlagSampleEvent {
   id: string;
@@ -94,17 +104,17 @@ export const KillTrading = (): ReactElement => {
     'all' | 'farming' | 'trading'
   >('farming');
   const [showDismissed, setShowDismissed] = useState(false);
-  const [hideReviewed, setHideReviewed] = useState(false);
+  const [hideReviewed, setHideReviewed] = useState(true);
   const [hideBanned, setHideBanned] = useState(true);
-  const [minScore, setMinScore] = useState(0);
+  const [minScore, setMinScore] = useState(50);
   const [reloadToken, setReloadToken] = useState(0);
   const [pendingIds, setPendingIds] = useState<Set<number>>(new Set());
   // Rows checked for a bulk action (e.g. "mark reviewed" across a batch
   // of obviously-legit trading fights at once, instead of clicking each
   // row's button one at a time).
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [dateFrom, setDateFrom] = useState(DEFAULT_DATE_FROM);
+  const [dateTo, setDateTo] = useState(DEFAULT_DATE_TO);
 
   const reload = useCallback(() => setReloadToken((token) => token + 1), []);
 
