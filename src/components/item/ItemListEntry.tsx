@@ -1,6 +1,7 @@
-import type { ReactElement } from 'react';
+import { type ReactElement, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router';
+import { CharacterItemPopup } from '@/components/character/CharacterItemPopup';
 import { ItemIconWithPopup } from '@/components/item/ItemIconWithPopup';
 import { itemNameClass } from '@/itemUtils';
 import type { ItemListEntryFragment } from '@/__generated__/graphql';
@@ -11,6 +12,7 @@ export const ItemListEntry = ({
   item: ItemListEntryFragment;
 }): ReactElement => {
   const { t } = useTranslation(['enums']);
+  const [showNamePopup, setShowNamePopup] = useState(false);
 
   return (
     <tr>
@@ -18,11 +20,22 @@ export const ItemListEntry = ({
         <ItemIconWithPopup item={item} />
       </td>
       <td>
-        <Link to={`/item/${item.id}`}>
-          <div className={`${itemNameClass(item)} has-text-weight-semi/bold`}>
-            {item.name}
-          </div>
-        </Link>
+        <div className="is-relative is-inline-block">
+          <Link
+            to={`/item/${item.id}`}
+            onMouseEnter={() => setShowNamePopup(true)}
+            onMouseLeave={() => setShowNamePopup(false)}
+            onFocus={() => setShowNamePopup(true)}
+            onBlur={() => setShowNamePopup(false)}
+          >
+            <div className={`${itemNameClass(item)} has-text-weight-semi/bold`}>
+              {item.name}
+            </div>
+          </Link>
+          {showNamePopup && (
+            <CharacterItemPopup item={item} talismans={[]} itemsEquipped={[]} />
+          )}
+        </div>
       </td>
       <td>{t(`enums:itemType.${item.type}`)}</td>
       <td>{t(`enums:itemSlot.${item.slot}`)}</td>
