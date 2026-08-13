@@ -34,6 +34,14 @@ const localDateTime = new Intl.DateTimeFormat(undefined, {
   timeStyle: 'short',
 });
 
+const localTimeZone = new Intl.DateTimeFormat(undefined, {
+  timeZoneName: 'short',
+})
+  .formatToParts(new Date())
+  .find((part) => part.type === 'timeZoneName')?.value;
+
+const localTimeLabel = localTimeZone ? `Local (${localTimeZone})` : 'Local';
+
 const serverDateTime = new Intl.DateTimeFormat('en-GB', {
   timeZone: SERVER_TIME_ZONE,
   day: 'numeric',
@@ -95,7 +103,7 @@ const EventCard = ({
           <dt>Starts</dt>
           <dd>
             <span>
-              <strong>Local</strong> {localDateTime.format(start)}
+              <strong>{localTimeLabel}</strong> {localDateTime.format(start)}
             </span>
             <span>
               <strong>Server</strong> {serverDateTime.format(start)}
@@ -107,7 +115,7 @@ const EventCard = ({
             <dt>Ends</dt>
             <dd>
               <span>
-                <strong>Local</strong> {localDateTime.format(end)}
+                <strong>{localTimeLabel}</strong> {localDateTime.format(end)}
               </span>
               <span>
                 <strong>Server</strong> {serverDateTime.format(end)}
