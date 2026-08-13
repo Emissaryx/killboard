@@ -105,16 +105,13 @@ export const InstanceRunsList = () => {
           durationMs:
             new Date(instanceRun.end).getTime() -
             new Date(instanceRun.start).getTime(),
-          encounters: new Set(
-            instanceRun.encounters.map((e) => e.encounterId),
-          ).size,
+          encounters: new Set(instanceRun.encounters.map((e) => e.encounterId))
+            .size,
           end: instanceRun.end,
           id: instanceRun.id,
           instanceName: instanceRun.instance.name,
           numDPS: instanceRun.scoreboardEntries.filter((entry) =>
-            [Archetype.MeleeDps, Archetype.RangedDps].includes(
-              entry.archetype,
-            ),
+            [Archetype.MeleeDps, Archetype.RangedDps].includes(entry.archetype),
           ).length,
           numHealers: instanceRun.scoreboardEntries.filter(
             (entry) => entry.archetype === Archetype.Healer,
