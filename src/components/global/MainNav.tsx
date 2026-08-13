@@ -20,6 +20,9 @@ export const MainNav = (): ReactElement => {
         <li className={clsx({ 'is-active': pathname.startsWith('/creature') })}>
           <Link to="/creatures">{t('pages:home.showCreatures')}</Link>
         </li>
+        <li className={clsx({ 'is-active': pathname === '/events' })}>
+          <Link to="/events">{t('common:events')}</Link>
+        </li>
         <li className={clsx({ 'is-active': pathname === '/guilds' })}>
           <Link to="/guilds">{t('pages:home.showGuildLeaderboard')}</Link>
         </li>

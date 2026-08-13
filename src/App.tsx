@@ -35,6 +35,7 @@ import { InstanceStatistics } from '@/pages/InstanceStatistics';
 import { InstanceHub } from '@/pages/InstanceHub';
 import { KillTrading } from '@/pages/KillTrading';
 import { CharacterGroup } from '@/pages/CharacterGroup';
+import { Events } from '@/pages/Events';
 
 // Extend the Window interface to include gtag
 declare global {
@@ -64,6 +65,7 @@ const App = () => {
         <Route path="/" element={<Home tab="players" />} />
         <Route path="/guilds" element={<Home tab="guilds" />} />
         <Route path="/scenarios" element={<Home tab="scenarios" />} />
+        <Route path="/events" element={<Events />} />
         <Route path="/class-activity" element={<Home tab="classActivity" />} />
         <Route path="/kill/:id" element={<Kill />} />
         <Route path="/kills" element={<Kills />} />
@@ -84,7 +86,6 @@ const App = () => {
           path="/character/:playerId1/feud/:playerId2"
           element={<PlayerFeudPage />}
         />
-
         <Route path="/creatures" element={<Creatures />} />
         <Route path="/creature/:id" element={<Creature />} />
         <Route
