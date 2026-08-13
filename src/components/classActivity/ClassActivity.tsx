@@ -32,7 +32,7 @@ import {
 // buckets - a single month, a quarter, a half-year, a year, or a trailing
 // 12-month window are all just different [from, to] ranges to it.
 const CLASS_ACTIVITY_WORKER_URL =
-  'https://killboard-class-activity.tcates79.workers.dev';
+  'https://theemissary.dev/api/class-activity-stats';
 
 const REALM_ORDER = 0;
 const REALM_DESTRUCTION = 1;

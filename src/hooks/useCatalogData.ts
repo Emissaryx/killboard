@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react';
 // hourly cron and caches it in D1. This fetches that cache in one request
 // so sort/filter can happen in the browser. See killboard-catalog's
 // worker.js for the crawl/cache side of this.
-const CATALOG_BASE_URL = 'https://killboard-catalog.tcates79.workers.dev';
+const CATALOG_BASE_URL = 'https://theemissary.dev/api/catalog';
 
 interface CatalogResponse<T> {
   count: number;

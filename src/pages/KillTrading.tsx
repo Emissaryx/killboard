@@ -13,7 +13,7 @@ import { SortConfigDirection, useSortableData } from '@/hooks/useSortableData';
 // own GraphQL API - see killboard-catalog's worker.js for how flags get
 // produced (a solo-kills backfill walking back to 2024-01-01, plus a
 // live check every 5 minutes).
-const CATALOG_BASE_URL = 'https://killboard-catalog.tcates79.workers.dev';
+const CATALOG_BASE_URL = 'https://theemissary.dev/api/catalog';
 const formatDateInput = (date: Date): string => {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');

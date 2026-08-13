@@ -433,7 +433,12 @@ const ScenarioBreakdown = ({
       <header>
         <div>
           <h2>Scenario Breakdown</h2>
-          <p>Activity and realm balance for the selected time window.</p>
+          <p>
+            Activity and realm balance for the selected time window. Balanced
+            means a 45-55% completed-match win rate, Watch means 40-60%, and
+            Lopsided falls outside that range. Top killer is the player with
+            the most total kills for that map in this window.
+          </p>
         </div>
         <div className="scenario-breakdown-controls">
           <label>
