@@ -21,7 +21,17 @@ export const Home = ({
       {tab === 'classActivity' && <ClassActivity />}
       {tab === 'players' && (
         <>
-          <SearchBox isPlayer navigateOnSubmit />
+          <section className="database-search-panel mb-5">
+            <h1 className="title is-4 mb-2">Search the RoR database</h1>
+            <p className="subtitle is-6 mb-3">
+              Find players, guilds, items, quests, creatures, and more.
+            </p>
+            <SearchBox
+              isPlayer
+              navigateOnSubmit
+              placeholder="Search players, guilds, items, quests, creatures..."
+            />
+          </section>
           <div className="columns">
             <div className="column is-6">
               <MonthlyLeaderboard />

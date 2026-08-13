@@ -10,11 +10,13 @@ export const SearchBox = ({
   onSubmit,
   isPlayer,
   navigateOnSubmit,
+  placeholder,
 }: {
   initialQuery?: string;
   onSubmit?: (query: string) => void;
   isPlayer?: boolean;
   navigateOnSubmit?: boolean;
+  placeholder?: string;
 }): ReactElement => {
   const { t } = useTranslation('components');
   const navigate = useNavigate();
@@ -109,7 +111,7 @@ export const SearchBox = ({
             ref={inputRef}
             className="input"
             type="search"
-            placeholder={t('searchBox.placeholder') ?? ''}
+            placeholder={placeholder ?? t('searchBox.placeholder') ?? ''}
             value={query}
             onChange={(e) => {
               const { value } = e.target;

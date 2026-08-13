@@ -63,6 +63,76 @@ a.navbar-item {
   border-left: 1px solid #230101;
 }
 
+.main-nav-tabs {
+  overflow: visible;
+}
+
+.main-nav-tabs ul {
+  flex-wrap: wrap;
+}
+
+.main-nav-database {
+  position: relative;
+}
+
+.main-nav-database summary {
+  align-items: center;
+  border-bottom: 1px solid transparent;
+  color: $link;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  margin-bottom: -1px;
+  padding: 0.5em 1em;
+  white-space: nowrap;
+}
+
+.main-nav-database summary::-webkit-details-marker {
+  display: none;
+}
+
+.main-nav-database summary::after {
+  border: 3px solid transparent;
+  border-top-color: currentColor;
+  content: '';
+  margin-left: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.main-nav-database-menu {
+  background: rgba(15, 15, 15, 0.98);
+  border: 1px solid rgba(227, 214, 196, 0.35);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.55);
+  min-width: 12rem;
+  padding: 0.35rem 0;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 30;
+}
+
+.main-nav-database-menu a {
+  display: block;
+  padding: 0.55rem 0.85rem;
+  white-space: nowrap;
+}
+
+.main-nav-database-menu a:hover,
+.main-nav-database-menu a:focus-visible {
+  background: rgba(191, 64, 0, 0.35);
+  color: #fff;
+}
+
+.database-search-panel {
+  background: rgba(10, 10, 10, 0.72);
+  border: 1px solid rgba(227, 214, 196, 0.28);
+  padding: 1.25rem;
+}
+
+.database-search-panel .field {
+  margin-bottom: 0 !important;
+}
+
 html {
   background: #000
     url('https://www.returnofreckoning.com/forum/styles/dawar/theme/images/theme/ror.jpg')
