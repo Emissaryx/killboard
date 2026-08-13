@@ -49,8 +49,15 @@ const serverDateTime = new Intl.DateTimeFormat('en-GB', {
   year: 'numeric',
   hour: '2-digit',
   minute: '2-digit',
-  timeZoneName: 'short',
 });
+
+const serverTimeZone = (time: number): string | undefined =>
+  new Intl.DateTimeFormat('en-GB', {
+    timeZone: SERVER_TIME_ZONE,
+    timeZoneName: 'short',
+  })
+    .formatToParts(time)
+    .find((part) => part.type === 'timeZoneName')?.value;
 
 const eventType = (typeName?: string): string => {
   switch (typeName) {
@@ -106,7 +113,8 @@ const EventCard = ({
               <strong>{localTimeLabel}</strong> {localDateTime.format(start)}
             </span>
             <span>
-              <strong>Server</strong> {serverDateTime.format(start)}
+              <strong>Server ({serverTimeZone(start)})</strong>{' '}
+              {serverDateTime.format(start)}
             </span>
           </dd>
         </div>
@@ -118,7 +126,8 @@ const EventCard = ({
                 <strong>{localTimeLabel}</strong> {localDateTime.format(end)}
               </span>
               <span>
-                <strong>Server</strong> {serverDateTime.format(end)}
+                <strong>Server ({serverTimeZone(end)})</strong>{' '}
+                {serverDateTime.format(end)}
               </span>
             </dd>
           </div>
