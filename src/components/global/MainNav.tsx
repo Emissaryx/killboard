@@ -8,8 +8,10 @@ import type { ReactElement } from 'react';
 // lookup tools (Items, Creatures, Quests, Instances, Storylines) are
 // grouped into a single "Database" dropdown -- mirrors the nav grouping
 // shipped on theemissary.dev's own router-level nav (nwdb.info-style).
-// Everything else stays a top-level tab, alphabetical by label. The
-// ranked leaderboard page intentionally isn't added here.
+// Everything else stays a top-level tab, alphabetical by label -- "Database"
+// itself is alphabetized in place as if it were a tool named "Database",
+// which lands it between "Class Activity" and "Events". The ranked
+// leaderboard page intentionally isn't added here.
 //
 // The dropdown panel is positioned with JS (see useEffect below) rather
 // than plain CSS position:absolute, because .tabs.is-fullwidth has
@@ -90,21 +92,6 @@ export const MainNav = (): ReactElement => {
         <li className={clsx({ 'is-active': pathname === '/class-activity' })}>
           <Link to="/class-activity">{t('pages:home.showClassActivity')}</Link>
         </li>
-        <li className={clsx({ 'is-active': pathname === '/events' })}>
-          <Link to="/events">{t('common:events')}</Link>
-        </li>
-        <li className={clsx({ 'is-active': pathname === '/guilds' })}>
-          <Link to="/guilds">{t('pages:home.showGuildLeaderboard')}</Link>
-        </li>
-        <li className={clsx({ 'is-active': pathname === '/' })}>
-          <Link to="/">{t('pages:home.showPlayerLeaderboard')}</Link>
-        </li>
-        <li className={clsx({ 'is-active': pathname === '/scenarios' })}>
-          <Link to="/scenarios">{t('pages:home.showScenarios')}</Link>
-        </li>
-        <li className={clsx({ 'is-active': pathname === '/skirmishes' })}>
-          <Link to="/skirmishes">{t('pages:home.showSkirmishes')}</Link>
-        </li>
         <li
           className={clsx('nav-database', { 'is-active': isDatabaseActive })}
         >
@@ -121,6 +108,21 @@ export const MainNav = (): ReactElement => {
               <Link to="/storylines">{t('pages:home.showStorylines')}</Link>
             </div>
           </details>
+        </li>
+        <li className={clsx({ 'is-active': pathname === '/events' })}>
+          <Link to="/events">{t('common:events')}</Link>
+        </li>
+        <li className={clsx({ 'is-active': pathname === '/guilds' })}>
+          <Link to="/guilds">{t('pages:home.showGuildLeaderboard')}</Link>
+        </li>
+        <li className={clsx({ 'is-active': pathname === '/' })}>
+          <Link to="/">{t('pages:home.showPlayerLeaderboard')}</Link>
+        </li>
+        <li className={clsx({ 'is-active': pathname === '/scenarios' })}>
+          <Link to="/scenarios">{t('pages:home.showScenarios')}</Link>
+        </li>
+        <li className={clsx({ 'is-active': pathname === '/skirmishes' })}>
+          <Link to="/skirmishes">{t('pages:home.showSkirmishes')}</Link>
         </li>
       </div>
     </div>
