@@ -38,7 +38,8 @@
     "showQuests": "Quests",
     "showCreatures": "Creatures",
     "showInstances": "Instances",
-    "showStorylines": "Storylines"
+    "showStorylines": "Storylines",
+    "showDatabase": "Database"
   },
   "classActivity": {
     "overview": "Overview",
