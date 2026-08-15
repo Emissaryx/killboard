@@ -2003,16 +2003,22 @@ $tooltip-item-bonus: rgb(255, 255, 0);
   color: $link;
 }
 
+// position:fixed (not absolute) is required, not just a mobile nicety:
+// .tabs.is-fullwidth has overflow-x:auto, and a real web-platform quirk
+// forces overflow-y to also clip once overflow-x is non-visible -- that
+// silently clipped an absolutely-positioned panel here at every viewport
+// width (confirmed live via computed-style + elementFromPoint: the panel
+// existed and was styled correctly, just invisible/unclickable). top/left
+// come from MainNav.tsx's own getBoundingClientRect() of the trigger,
+// recomputed on open/resize/scroll.
 .nav-database-menu {
   background: #171717;
   border: 1px solid rgba(135, 123, 105, 0.4);
   display: flex;
   flex-direction: column;
-  left: 0;
   min-width: 10rem;
   padding: 0.35rem;
-  position: absolute;
-  top: 100%;
+  position: fixed;
   z-index: 30;
 }
 
@@ -2027,13 +2033,4 @@ $tooltip-item-bonus: rgb(255, 255, 0);
 .nav-database-menu a:focus-visible {
   background: rgba(255, 153, 0, 0.12);
   color: #fff;
-}
-
-@media (max-width: 640px) {
-  .nav-database-menu {
-    left: auto;
-    position: fixed;
-    right: 0.5rem;
-    width: auto;
-  }
 }
